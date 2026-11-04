@@ -45,6 +45,7 @@ objc = "0.2"
 [patch.crates-io]
 gpui = { path = "vendor/gpui" }
 taffy = { path = "vendor/taffy" }
+xattr = { path = "vendor/xattr" }
 
 # `objc`'s msg_send! checks `feature = "cargo-clippy"`, which rustc no longer
 # knows about.
