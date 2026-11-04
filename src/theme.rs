@@ -147,8 +147,10 @@ pub const UI_FONT: &str = ".SystemUIFont";
 /// SF Mono.
 #[cfg(target_os = "macos")]
 pub const MONO_FONT: &str = ".AppleSystemUIFontMonospaced";
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
 pub const MONO_FONT: &str = "Consolas";
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+pub const MONO_FONT: &str = "monospace";
 
 pub struct Theme;
 

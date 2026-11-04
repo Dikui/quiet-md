@@ -13,17 +13,17 @@ pub fn global_key() -> String {
 }
 pub fn init(cx: &mut App) {
     let base = cx.key_bindings().borrow().bindings().cloned().collect::<Vec<_>>();
-    #[cfg(target_os = "windows")]
-    let base = base.into_iter().filter_map(windows_binding).collect();
+    #[cfg(not(target_os = "macos"))]
+    let base = base.into_iter().filter_map(pc_binding).collect();
     let custom = std::fs::read(path()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
     cx.set_global(Shortcuts { base, custom });
     rebuild(cx);
 }
 
-#[cfg(target_os = "windows")]
-fn windows_binding(binding: KeyBinding) -> Option<KeyBinding> {
+#[cfg(not(target_os = "macos"))]
+fn pc_binding(binding: KeyBinding) -> Option<KeyBinding> {
     let keys = binding.keystrokes().iter().map(|k| k.unparse().replace("win-", "cmd-")).collect::<Vec<_>>().join(" ");
-    // Cocoa's control-key navigation conflicts with Windows editing shortcuts.
+    // Cocoa's control-key navigation conflicts with PC editing shortcuts.
     if matches!(keys.as_str(), "ctrl-a" | "ctrl-b" | "ctrl-d" | "ctrl-e" | "ctrl-f" | "ctrl-h" | "ctrl-n" | "ctrl-p" | "ctrl-backspace") { return None; }
     let keys = if binding.action().name().ends_with("::InlineCode") { "ctrl-shift-c".to_string() } else { keys.split(' ').map(|key| match key {
         "cmd-left" => "home".into(), "cmd-right" => "end".into(),
@@ -36,15 +36,15 @@ fn windows_binding(binding: KeyBinding) -> Option<KeyBinding> {
     KeyBinding::load(&keys, binding.action().boxed_clone(), binding.predicate(), false, binding.action_input(), &DummyKeyboardMapper).ok()
 }
 
-#[cfg(all(test, target_os = "windows"))]
+#[cfg(all(test, not(target_os = "macos")))]
 mod tests {
-    use super::windows_binding;
+    use super::pc_binding;
     use gpui::KeyBinding;
     #[test]
     fn copy_and_inline_code_keep_distinct_windows_shortcuts() {
         use crate::editor::keymap::{Copy, InlineCode};
-        let copy = windows_binding(KeyBinding::new("cmd-c", Copy, Some("Editor"))).unwrap();
-        let code = windows_binding(KeyBinding::new("cmd-ctrl-c", InlineCode, Some("Editor"))).unwrap();
+        let copy = pc_binding(KeyBinding::new("cmd-c", Copy, Some("Editor"))).unwrap();
+        let code = pc_binding(KeyBinding::new("cmd-ctrl-c", InlineCode, Some("Editor"))).unwrap();
         assert_eq!(copy.keystrokes().iter().map(|k| k.unparse()).collect::<Vec<_>>(), ["ctrl-c"]);
         assert_eq!(code.keystrokes().iter().map(|k| k.unparse()).collect::<Vec<_>>(), ["ctrl-shift-c"]);
         assert_ne!(copy.keystrokes(), code.keystrokes());
@@ -148,7 +148,7 @@ fn info(name: &str) -> Option<(usize, &'static str, &'static str)> {
 pub fn label(name: &str) -> Option<&'static str> { info(name).map(|(_, zh, en)| if english() { en } else { zh }) }
 fn default_key(s: &Shortcuts, id: &str) -> String {
     if id == "global" { return GLOBAL_DEFAULT.into(); }
-    if id.ends_with("::NewDoc") { return if cfg!(target_os = "windows") { "ctrl-n" } else { "cmd-n" }.into(); }
+    if id.ends_with("::NewDoc") { return if cfg!(not(target_os = "macos")) { "ctrl-n" } else { "cmd-n" }.into(); }
     s.base.iter().find(|b| b.action().name() == id).map(|b| b.keystrokes().iter().map(|k| k.unparse()).collect::<Vec<_>>().join(" ")).unwrap_or_default()
 }
 /// The key an action runs on now.

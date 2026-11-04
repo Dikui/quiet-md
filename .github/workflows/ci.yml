@@ -62,3 +62,22 @@ jobs:
           Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
           & cargo build --release --locked
           if ($LASTEXITCODE -ne 0) { throw 'Windows build failed' }
+
+  linux-build:
+    name: Linux x64 build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libfontconfig1-dev libfreetype6-dev libwayland-dev libx11-xcb-dev libvulkan-dev
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          cache-on-failure: true
+
+      - name: Build application
+        run: cargo build --release --locked
