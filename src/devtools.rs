@@ -217,6 +217,17 @@ pub fn start(window: &mut Window, cx: &mut App) {
                 cx.background_executor().timer(Duration::from_millis(120)).await;
                 continue;
             }
+            if cmd == "check-export-safety" {
+                cx.update(|cx| {
+                    let handle = cx.windows().into_iter().find_map(|w| w.downcast::<crate::app::Workspace>()).unwrap();
+                    handle.update(cx, |ws, window, cx| ws.check_export_safety(window, cx)).unwrap();
+                }).unwrap();
+                continue;
+            }
+            if cmd == "check-save-safety" {
+                cx.update(|cx| crate::app::check_save_safety(rest.trim(), cx)).unwrap();
+                continue;
+            }
             #[cfg(target_os = "macos")]
             let handled = mouse_step(ns_view, cmd, &nums(rest));
             #[cfg(not(target_os = "macos"))]

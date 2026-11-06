@@ -14,6 +14,8 @@ diff -ru $R/taffy-0.9.0/src vendor/taffy/src
 
 ## GPUI 0.2.2
 
+- `platform/windows/events.rs`: `VK_PROCESSKEY` 始终交给 IME，不在组合结束后重新派发成编辑快捷键，避免小狼毫退格、回车被处理两次。
+
 | # | 文件 | 改动 | 用途 |
 |---|---|---|---|
 | 1 | `platform/mac/text_system.rs` | 光栅化时显式打开字体平滑（`set_allows_font_smoothing(true)`、`set_should_smooth_fonts(true)`） | 与原生 AppKit / Catalyst 文字一致（笔画墨量 5.73 vs 5.74 / 像素宽）；关闭时少约 15% |

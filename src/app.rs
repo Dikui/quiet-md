@@ -140,7 +140,8 @@ pub fn quit(cx: &mut App) {
         .windows()
         .into_iter()
         .filter_map(|w| w.downcast::<Workspace>())
-        .all(|w| w.update(cx, |ws, _, cx| ws.save_before(cx, |_, _, cx| cx.quit())).unwrap_or(true));
+        .map(|w| w.update(cx, |ws, _, cx| ws.save_before(cx, |_, _, cx| cx.defer(quit))).unwrap_or(false))
+        .fold(true, |ready, saved| ready & saved);
     if ready {
         cx.quit();
     }
@@ -360,7 +361,10 @@ impl Workspace {
             // go through `save_before` and ask when the save fails.
             cx.on_app_quit(|this, cx| {
                 crate::quick_note::persist(cx);
-                this.flush(cx);
+                if !this.flush(cx) && let Some(ed) = &this.editor
+                    && let Err(error) = this.store.recover_later(&ed.read(cx).core.doc) {
+                    crate::logging::write(&format!("Could not preserve unsaved document: {error:#}"));
+                }
                 async {}
             }),
         ];
@@ -945,13 +949,50 @@ impl Workspace {
                 return;
             }
         } else {
-            self.unsaved = false;
-            self.status = SaveStatus::Idle;
+            let Some(id) = self.current.clone() else { return };
+            match self.store.load_for_edit(&id, false) {
+                Ok(doc) => {
+                    if let Some(ed) = &self.editor {
+                        ed.update(cx, |e, cx| e.receive_document(&crate::editor::core::Core::new(doc), cx));
+                    }
+                    self.sync_document(window, cx);
+                    self.save_task = None;
+                    self.unsaved = false;
+                    self.status = SaveStatus::Idle;
+                    self.dirty_since = None;
+                    self.entries = self.store.list();
+                    self.sort();
+                }
+                Err(e) => {
+                    self.status = SaveStatus::Failed(e.to_string());
+                    self.confirm = Some(Confirm::SaveFailed);
+                    return;
+                }
+            }
         }
         if let Some(then) = self.after_save.take() {
             then(self, window, cx);
         }
         cx.notify();
+    }
+
+    pub(crate) fn save_failed_copy(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(ed) = &self.editor else { return };
+        let mut doc = ed.read(cx).core.doc.clone();
+        doc.title = crate::model::RichText::plain(format!("{}{}", doc.title.text, crate::settings::tr("（恢复副本）", " (recovered copy)")));
+        match self.store.create_from(&doc) {
+            Ok(_) => {
+                self.entries = self.store.list();
+                self.sort();
+                self.confirm = None;
+                self.resolve_save_failed(false, window, cx);
+            }
+            Err(e) => {
+                self.status = SaveStatus::Failed(e.to_string());
+                self.confirm = Some(Confirm::SaveFailed);
+                cx.notify();
+            }
+        }
     }
 
     /// The error of the last failed save, for the 保存失败 dialog.
@@ -1404,5 +1445,70 @@ impl Render for Workspace {
             .children(search)
             .children(resize_overlay)
             .children(toast)
+    }
+}
+
+/// Fault injection against real window/save code, available only in the harness build.
+#[cfg(feature = "devtools")]
+#[derive(Clone)]
+struct SaveSafetyQa(Vec<(WindowHandle<Workspace>, String)>);
+#[cfg(feature = "devtools")]
+impl Global for SaveSafetyQa {}
+
+#[cfg(feature = "devtools")]
+pub(crate) fn check_save_safety(phase: &str, cx: &mut App) {
+    use crate::model::{Document, RichText};
+    let doc = |title: &str| Document { title: RichText::plain(title), ..Default::default() };
+    if phase == "setup" {
+        let mut store = cx.global::<SharedStore>().clone();
+        let mut windows = vec![];
+        for name in ["A", "B", "C"] {
+            let id = store.create_from(&doc(name)).unwrap();
+            let open_id = id.clone();
+            let handle = cx.open_window(WindowOptions { focus: false, ..Default::default() }, |window, cx| {
+                cx.new(|cx| Workspace::new_document_window(Some(open_id), window, cx))
+            }).unwrap();
+            handle.update(cx, |ws, _, cx| {
+                ws.editor.as_ref().unwrap().update(cx, |e, cx| e.receive_document(&crate::editor::core::Core::new(doc(&format!("local-{name}"))), cx));
+                ws.unsaved = true;
+            }).unwrap();
+            if name != "C" {
+                std::fs::write(crate::store::Store::root_dir().join("docs").join(format!("{id}.xml")), crate::docxml::serialize(&doc(&format!("disk-{name}")))).unwrap();
+            }
+            windows.push((handle, id));
+        }
+        quit(cx);
+        for (handle, _) in &windows[..2] {
+            handle.update(cx, |ws, _, _| assert!(ws.unsaved && matches!(ws.confirm, Some(Confirm::SaveFailed)))).unwrap();
+        }
+        assert_eq!(store.load(&windows[2].1).unwrap().title.text, "local-C");
+        windows[0].0.update(cx, |ws, window, cx| {
+            ws.resolve_save_failed(true, window, cx);
+            assert!(ws.unsaved);
+            ws.confirm = None;
+            ws.resolve_save_failed(false, window, cx);
+            assert!(!ws.unsaved);
+            assert_eq!(ws.editor.as_ref().unwrap().read(cx).core.doc.title.text, "disk-A");
+        }).unwrap();
+        cx.set_global(SaveSafetyQa(windows));
+        eprintln!("save-safety: all windows checked; successful sibling saved; retry and reload checked");
+    } else {
+        let windows = cx.global::<SaveSafetyQa>().0.clone();
+        windows[1].0.update(cx, |ws, window, cx| {
+            assert!(ws.unsaved && matches!(ws.confirm, Some(Confirm::SaveFailed)));
+            ws.after_save = None;
+            ws.save_failed_copy(window, cx);
+            assert!(!ws.unsaved);
+            assert_eq!(ws.editor.as_ref().unwrap().read(cx).core.doc.title.text, "disk-B");
+            assert!(ws.store.list().iter().any(|e| e.title.starts_with("local-B")));
+        }).unwrap();
+        windows[0].0.update(cx, |ws, _, cx| {
+            ws.editor.as_ref().unwrap().update(cx, |e, cx| e.receive_document(&crate::editor::core::Core::new(doc("after-reload")), cx));
+            ws.unsaved = true;
+            assert!(ws.flush(cx));
+            assert_eq!(ws.store.load(ws.current.as_ref().unwrap()).unwrap().title.text, "after-reload");
+        }).unwrap();
+        eprintln!("save-safety: PASS; remaining conflict blocked quit; copy preserved; edit after reload saved cleanly");
+        for (handle, _) in windows { handle.update(cx, |_, window, _| window.remove_window()).unwrap(); }
     }
 }

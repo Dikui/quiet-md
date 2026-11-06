@@ -1701,7 +1701,7 @@ dependencies = [
 
 [[package]]
 name = "fdl_core"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "anyhow",
  "dirs 7.0.0",
@@ -4248,7 +4248,7 @@ dependencies = [
 
 [[package]]
 name = "quiet_md"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "anyhow",
  "base64",

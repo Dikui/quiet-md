@@ -15,6 +15,13 @@ const RADIUS: f32 = 12.;
 /// Each version's notes: (version, [(中文, English)]). Only the running
 /// version's are shown; a version without notes shows nothing.
 const NOTES: &[(&str, &[(&str, &str)])] = &[
+    ("0.1.7", &[
+        ("退出时检查所有窗口的保存状态，保存冲突支持重新载入和另存副本", "Check every window before quitting; reload or save a copy when saving fails"),
+        ("退出时无法保存的内容会保留为恢复副本，下次启动恢复", "Preserve unsaved work as recovery copies when quitting and restore it on next launch"),
+        ("Markdown 导出保留行内附件的链接和文件", "Markdown exports include inline attachment links and files"),
+        ("导出限制本地文件的读取范围和大小，写盘失败时更可靠", "Safer local-file exports and more reliable handling of write failures"),
+        ("Windows：修复小狼毫退格多删字符、回车多换行", "Windows: fix extra deletion and newlines when using the Weasel input method"),
+    ]),
     ("0.1.6", &[
         ("点击空白或切回窗口后可以继续输入，回到应用时更流畅", "Keep typing after clicking blank space or returning to a window; faster library refresh"),
         ("宽表格可延伸至页边，竖向滚动不再带动表格横移", "Wide tables use the page margins and stay still during vertical scrolling"),
