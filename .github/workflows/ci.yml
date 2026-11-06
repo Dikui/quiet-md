@@ -101,3 +101,6 @@ jobs:
 
       - name: Tests, bundled guides and clippy
         run: python3 scripts/check.py
+
+      - name: Verify Linux package
+        run: scripts/package-linux.sh
