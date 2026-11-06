@@ -73,7 +73,7 @@ const QUERY = `query($zone: String!, $from: Time!, $to: Time!, $limit: Int!) { v
 async function groups(env, from, to) {
   const res = await fetch('https://api.cloudflare.com/client/v4/graphql', {
     method: 'POST',
-    headers: { authorization: `Bearer ${env.CF_API_TOKEN}`, 'content-type': 'application/json' },
+    headers: { authorization: `Bearer ${String(env.CF_API_TOKEN || '').trim()}`, 'content-type': 'application/json' },
     body: JSON.stringify({ query: QUERY, variables: { zone: env.ZONE_ID, from: from.toISOString(), to: to.toISOString(), limit: PAGE } }),
   });
   const body = await res.json();
