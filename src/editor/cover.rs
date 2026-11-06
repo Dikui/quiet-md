@@ -116,7 +116,7 @@ fn meta_entry(id: &'static str, ic: &'static str, label: &'static str) -> Statef
         .group_hover("doc-header", |s| s.opacity(1.))
         .hover(|s| s.bg(Theme::fill_hover()))
         .active(|s| s.bg(Theme::fill_pressed()))
-        .child(div().mx(px(4.)).child(icon(ic, 16., Theme::text_caption())))
+        .child(div().mx(px(4.)).child(icon(ic, 16., Theme::icon())))
         .child(label)
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
 }
@@ -520,7 +520,7 @@ impl Editor {
                     .when(!upload, |d| {
                         d.child(
                             action("cover-random")
-                                .child(div().mr(px(4.)).child(icon("shuffle", 16., Theme::text_caption())))
+                                .child(div().mr(px(4.)).child(icon("shuffle", 16., Theme::icon())))
                                 .child(crate::settings::text("随机"))
                                 .on_click(cx.listener(|e, _, _, cx| e.random_cover(cx))),
                         )

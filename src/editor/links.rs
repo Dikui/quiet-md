@@ -358,7 +358,7 @@ impl Editor {
         let help = div()
             .id("refs-help")
             .ml(px(4.))
-            .child(icon("circle-help", 14., Theme::text_placeholder()))
+            .child(icon("circle-help", 14., Theme::icon()))
             .tip_above(crate::settings::text("本文被以下文档所引用"), None);
         let close = div()
             .id("refs-hide")
@@ -370,7 +370,7 @@ impl Editor {
             .cursor_pointer()
             .hover(|s| s.bg(Theme::fill_hover_strong()))
             .on_click(cx.listener(|_, _, _, cx| cx.emit(EditorEvent::HideRefs)))
-            .child(icon("x", 16., Theme::text_caption()))
+            .child(icon("x", 16., Theme::icon()))
             .tip_above(crate::settings::text("隐藏引用列表"), None);
         let tabs = div()
             .flex()
@@ -422,7 +422,7 @@ impl Editor {
                                 }
                                 cx.notify();
                             }))
-                            .child(icon(if expanded { "triangle-down" } else { "triangle-right" }, 12., Theme::text_caption()))
+                            .child(icon(if expanded { "triangle-down" } else { "triangle-right" }, 12., Theme::icon()))
                             .tip_above(if expanded { crate::settings::text("收起") } else { crate::settings::text("展开") }, None),
                     )
                 })

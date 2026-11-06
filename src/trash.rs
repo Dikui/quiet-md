@@ -89,7 +89,7 @@ impl Workspace {
         let empty = (!self.trash.is_empty()).then(|| div().id("trash-empty").no_drag().flex_none().mr(px(8.)).h(px(28.)).px(px(10.)).flex().items_center().gap(px(6.))
             .rounded(px(9.)).cursor_pointer().hover(|s| s.bg(Theme::fill_hover())).active(|s| s.bg(Theme::fill_pressed()))
             .text_size(px(13.)).line_height(px(20.)).text_color(Theme::text())
-            .child(icon("bin", 14., Theme::text_code())).child(crate::settings::text("清空回收站"))
+            .child(icon("bin", 14., Theme::icon())).child(crate::settings::text("清空回收站"))
             .on_click(cx.listener(|w, _, _, cx| { w.trash_menu = None; w.confirm = Some(Confirm::EmptyTrash); cx.notify(); })));
         let header = page_header(self, "回收站", 26., cx).children(empty).child(
             crate::ui::header_icon("trash-search", "search")
@@ -139,7 +139,7 @@ impl Workspace {
                 .cursor_pointer()
                 .hover(|s| s.bg(Theme::fill_hover_strong()))
                 .when(menu_open, |d| d.bg(Theme::fill_hover_strong()))
-                .child(icon("ellipsis", 16., Theme::text_caption()))
+                .child(icon("ellipsis", 16., Theme::icon()))
                 .on_click(cx.listener(move |w, ev: &ClickEvent, _, cx| {
                     cx.stop_propagation();
                     let p = ev.position();
@@ -183,7 +183,7 @@ impl Workspace {
                             .flex()
                             .items_center()
                             .gap(px(4.))
-                            .child(icon("library", 16., Theme::text_placeholder()))
+                            .child(icon("library", 16., Theme::icon()))
                             .child(div().min_w_0().text_size(px(13.)).text_color(Theme::text_caption()).overflow_hidden().whitespace_nowrap().text_ellipsis().child(ui_text(self.trash_location(t)))),
                     )
                     .child(div().w(px(168.)).flex_none().pl(px(20.)).text_size(px(13.)).text_color(Theme::text_caption()).child(remaining(t.deleted)))
@@ -201,7 +201,7 @@ impl Workspace {
             let g = SharedString::from(key);
             crate::ui::menu_row(key, g.clone())
                 .text_color(color)
-                .child(icon(ic, 16., if color == Theme::text() { Theme::text_code() } else { color }).group_hover(g.clone(), |s| s.text_color(gpui::white())))
+                .child(icon(ic, 16., if color == Theme::icon() { Theme::icon() } else { color }).group_hover(g.clone(), |s| s.text_color(gpui::white())))
                 .child(menu_label(label, g, gpui::white()))
         };
         let (a, b) = (id.clone(), id);

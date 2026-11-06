@@ -292,7 +292,7 @@ impl Editor {
             .pr(px(43.))
             .flex()
             .items_center()
-            .child(div().absolute().left(px(11.)).top(px(9.5)).child(icon("search", 15., Theme::text_caption())))
+            .child(div().absolute().left(px(11.)).top(px(9.5)).child(icon("search", 15., Theme::icon())))
             .child(div().flex_1().min_w_0().child(self.emoji_field.clone()))
             .when(has_text, |d| {
                 d.child(
@@ -308,7 +308,7 @@ impl Editor {
                         .justify_center()
                         .cursor_pointer()
                         .hover(|s| s.bg(Theme::fill_hover()))
-                        .child(icon("x", 14., Theme::text_caption()))
+                        .child(icon("x", 14., Theme::icon()))
                         .on_mouse_down(
                             MouseButton::Left,
                             cx.listener(|ed, _, window, cx| {
@@ -348,7 +348,7 @@ impl Editor {
             .hover(|s| s.bg(Theme::fill_hover()))
             .active(|s| s.bg(Theme::fill_pressed()))
             .tip_above(crate::settings::text("随机"), None)
-            .child(icon("shuffle", 18., Theme::text_caption()))
+            .child(icon("shuffle", 18., Theme::icon()))
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(move |ed, _, window, cx| ed.pick_emoji(target, emoji::random_pick(), false, window, cx)));
 
@@ -374,7 +374,7 @@ impl Editor {
                     .cursor_pointer()
                     .hover(|s| s.bg(Theme::fill_hover()))
                     .tip_above(label, None)
-                    .child(icon(ic, 18., if on { Theme::primary() } else { Theme::text_caption() }))
+                    .child(icon(ic, 18., if on { Theme::primary() } else { Theme::icon() }))
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(cx.listener(move |ed, _, _, cx| {
                         // A category click leaves search.

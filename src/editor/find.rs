@@ -390,7 +390,7 @@ impl Editor {
                             .cursor_pointer()
                             .hover(|s| s.bg(Theme::fill_hover_strong()))
                             .active(|s| s.bg(Theme::fill_pressed()))
-                            .child(icon("x", 16., Theme::text_caption()))
+                            .child(icon("x", 16., Theme::icon()))
                             .on_click(cx.listener(|e, _, window, cx| e.close_find(window, cx))),
                     ),
             )

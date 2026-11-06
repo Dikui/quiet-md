@@ -393,7 +393,7 @@ fn popup_button(id: impl Into<ElementId>, label: impl Into<SharedString>, open: 
         .hover(|s| s.bg(theme::c(craft::N100))).active(|s| s.bg(theme::c(craft::N200)))
         .text_size(px(13.)).line_height(px(18.)).text_color(Theme::text())
         .child(div().min_w_0().truncate().child(label.into()))
-        .child(ui::icon("chevron-down", 12., Theme::text_caption()))
+        .child(ui::icon("chevron-down", 12., Theme::icon()))
 }
 
 fn apply_theme(w: &mut Workspace, id: String, cx: &mut Context<Workspace>) {
@@ -527,7 +527,7 @@ impl Workspace {
                 .text_size(px(13.)).line_height(px(20.)).cursor_pointer()
                 .when(on, |d| d.bg(Theme::sidebar_selected()).text_color(Theme::text()))
                 .when(!on, |d| d.text_color(Theme::sidebar_text()).hover(|s| s.bg(Theme::sidebar_hover())))
-                .child(div().size(px(20.)).flex_none().flex().items_center().justify_center().mr(px(9.)).child(ui::icon(icon, sb::ROW_ICON, if on { Theme::text_code() } else { Theme::icon() })))
+                .child(div().size(px(20.)).flex_none().flex().items_center().justify_center().mr(px(9.)).child(ui::icon(icon, sb::ROW_ICON, Theme::icon())))
                 .child(title)
                 .on_click(cx.listener(move |w, _, _, cx| match page { Some(p) => w.open_settings(p, cx), None => w.show_view(View::Trash, cx) }))
         };

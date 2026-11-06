@@ -240,7 +240,7 @@ pub fn menu_label(label: impl Into<SharedString>, group: SharedString, hover: Hs
 
 /// Glyph of a [`menu_row`]: secondary, white while its row is hovered.
 pub fn menu_glyph(name: &str, size: f32, group: SharedString) -> Svg {
-    icon(name, size, Theme::text_code()).group_hover(group, |s| s.text_color(gpui::white()))
+    icon(name, size, Theme::icon()).group_hover(group, |s| s.text_color(gpui::white()))
 }
 
 /// Tooltip bubble: the dark rounded tip (12pt white on near-black, radius 7, arrow).

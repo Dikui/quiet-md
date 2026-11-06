@@ -60,3 +60,7 @@ pub fn callout_border_swatch(name: &str) -> Option<gpui::Hsla> { if crate::setti
 pub use crate::theme::{shadow_button, shadow_menu, shadow_panel, shadow_dialog};
 
 pub fn mono_font() -> &'static str { style().font("pre.font") }
+
+impl Theme {
+    pub fn icon() -> gpui::Hsla { if crate::theme::dark() { Self::text_code() } else { crate::theme::Theme::icon() } }
+}

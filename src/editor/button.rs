@@ -353,7 +353,7 @@ impl Editor {
                     .hover(|s| s.bg(Theme::fill_hover_strong()))
                     .active(|s| s.bg(Theme::fill_pressed()))
                     .tip_above(crate::settings::text("编辑"), None)
-                    .child(icon("pen-line", 18., Theme::text_code()))
+                    .child(icon("pen-line", 18., Theme::icon()))
                     .on_click(cx.listener(move |e, _, window, cx| e.open_button_panel(at_, window, cx))),
             );
         Some(at(self.rel(point(r.center().x - px(w / 2.), r.top() - px(4.))), Corner::BottomLeft, el))
@@ -564,7 +564,7 @@ impl Editor {
             .cursor_pointer()
             .child(canvas(move |b, _, _| select_cell.set(Some(b)), |_, _, _, _| {}).absolute().inset_0())
             .child(div().flex_1().text_size(px(13.)).line_height(px(20.)).child(crate::settings::text(p.preview.action.label())))
-            .child(div().ml(px(8.)).child(icon("chevron-down", 12., Theme::text_caption())))
+            .child(div().ml(px(8.)).child(icon("chevron-down", 12., Theme::icon())))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|e, _, _, cx| {
@@ -727,7 +727,7 @@ impl Editor {
                     .rounded(px(ROW_RADIUS))
                     .cursor_pointer()
                     .hover(|s| s.bg(Theme::fill_hover()))
-                    .child(icon(action_icon(act), 16., Theme::text_code()))
+                    .child(icon(action_icon(act), 16., Theme::icon()))
                     .child(div().text_size(px(13.)).line_height(px(20.)).child(crate::settings::text(act.label())))
                     .on_mouse_down(
                         MouseButton::Left,

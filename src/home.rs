@@ -220,7 +220,7 @@ fn thumb_block_in(b: &crate::model::Block, depth: usize, inherited: Hsla, quote:
             return node.child(table_el).into_any_element();
         }
         BlockKind::File(f) => return node.p(px(12. * s)).rounded(px(bs::RADIUS * s)).border(px(s)).border_color(Theme::line_border()).bg(bs::code_surface()).flex_row().items_center().gap(px(12. * s))
-            .child(icon("file-text", 30. * s, Theme::text_caption())).child(div().flex_1().min_w_0().text_size(px(15. * s)).font_weight(FontWeight::MEDIUM).child(f.name.clone())).into_any_element(),
+            .child(icon("file-text", 30. * s, Theme::icon())).child(div().flex_1().min_w_0().text_size(px(15. * s)).font_weight(FontWeight::MEDIUM).child(f.name.clone())).into_any_element(),
         BlockKind::Countdown(c) => {
             let left = c.remaining(crate::time::now_ms());
             let color = u32::from_str_radix(c.color.trim_start_matches('#'), 16).map(theme::c).unwrap_or(Theme::primary_500());
@@ -235,7 +235,7 @@ fn thumb_block_in(b: &crate::model::Block, depth: usize, inherited: Hsla, quote:
         BlockKind::SubPageList => {
             node = node.p(px(8. * s)).rounded(px(bs::RADIUS * s)).border(px(s)).border_color(Theme::line_border()).bg(Theme::bg_overlay());
             if b.children.is_empty() { return node.h(px(96. * s)).justify_center().text_center().text_color(Theme::text_caption()).child(crate::settings::text("目录下暂无子页面")).into_any_element(); }
-            for child in &b.children { node = node.child(div().py(px(9. * s)).px(px(6. * s)).flex().items_start().gap(px(6. * s)).child(icon("doc", 16. * s, Theme::text_caption())).child(div().flex_1().min_w_0().font_weight(FontWeight::MEDIUM).child(child.text.text.clone()))); }
+            for child in &b.children { node = node.child(div().py(px(9. * s)).px(px(6. * s)).flex().items_start().gap(px(6. * s)).child(icon("doc", 16. * s, Theme::icon())).child(div().flex_1().min_w_0().font_weight(FontWeight::MEDIUM).child(child.text.text.clone()))); }
             return node.into_any_element();
         }
         BlockKind::Raw { tag, .. } => return node.p(px(8. * s)).rounded(px(8. * s)).bg(Theme::bg_overlay()).text_color(Theme::text_caption()).child(crate::localized_format!("<{tag}> 已保留的内容", "<{tag}> Preserved content")).into_any_element(),
@@ -407,8 +407,8 @@ impl Workspace {
 
     fn home_entries(&self) -> Vec<Entry> {
         let mut v: Vec<Entry> = match self.home.tab {
-            HomeTab::Recent => self.entries.clone(),
-            HomeTab::Starred => self.entries.iter().filter(|e| e.meta.starred > 0).cloned().collect(),
+            HomeTab::Recent => self.entries.iter().filter(|e| e.meta.folder.is_none()).cloned().collect(),
+            HomeTab::Starred => self.entries.iter().filter(|e| e.meta.folder.is_none() && e.meta.starred > 0).cloned().collect(),
         };
         v.sort_by(|a, b| {
             let order = match self.home.sort {
@@ -481,7 +481,7 @@ impl Workspace {
             .cursor_pointer()
             .hover(|s| s.bg(Theme::fill_hover_strong()))
             .when(open, |d| d.bg(Theme::fill_hover_strong()))
-            .child(icon("ellipsis", 16., Theme::text_caption()))
+            .child(icon("ellipsis", 16., Theme::icon()))
             .child(canvas(move |b, _, _| {
                 rec.borrow_mut().insert(key.clone(), b);
             }, |_, _, _, _| {}).absolute().inset_0())
@@ -553,7 +553,7 @@ impl Workspace {
                 .cursor_pointer()
                 .when(on, |d| d.bg(Theme::fill_hover_strong()))
                 .when(!on, |d| d.tip(tip, None).hover(|s| s.bg(Theme::fill_hover())))
-                .child(icon(ic, 14., if on { Theme::text_code() } else { Theme::text_caption() }))
+                .child(icon(ic, 14., Theme::icon()))
                 .on_click(cx.listener(move |w, _, _, cx| {
                     w.home.grid = grid;
                     w.save_home();
@@ -568,7 +568,7 @@ impl Workspace {
                 .text_size(px(13.)).line_height(px(20.))
                 .text_color(if enabled { Theme::text() } else { Theme::text_disabled() })
                 .when(enabled, |d| d.cursor_pointer().hover(|s| s.bg(Theme::fill_hover())))
-                .child(icon(ic, 14., if enabled { Theme::text_code() } else { Theme::text_disabled() }))
+                .child(icon(ic, 14., if enabled { Theme::icon() } else { Theme::text_disabled() }))
                 .child(label)
         };
         let toolbar = div()
@@ -605,13 +605,13 @@ impl Workspace {
             .child(tab("home-tab-recent", crate::settings::text("我的文档"), HomeTab::Recent))
             .child(tab("home-tab-star", crate::settings::text("收藏"), HomeTab::Starred))
             .child(div().flex_1())
-            .child(text_btn("home-batch", "batch", crate::settings::text("批量管理"), true).mr(px(8.))
+            .child(text_btn("home-batch", "batch", crate::settings::text("批量管理"), true).text_color(Theme::text_caption()).mr(px(8.))
                 .on_click(cx.listener(|w, _, _, cx| { w.batch = Some(vec![]); w.row_menu = None; w.home.sort_menu = false; cx.notify(); })))
             .child(
                 div().id("home-sort").relative().h(px(28.)).px(px(10.)).flex().items_center().gap(px(6.))
                     .rounded(px(9.)).text_size(px(13.)).text_color(Theme::text_caption()).cursor_pointer()
                     .hover(|s| s.bg(Theme::fill_hover())).when(self.home.sort_menu, |d| d.bg(Theme::fill_hover_strong()))
-                    .child(icon("sort-down", 14., Theme::text_caption())).child(crate::settings::label(self.home.sort.label()))
+                    .child(icon("sort-down", 14., Theme::icon())).child(crate::settings::label(self.home.sort.label()))
                     .child(self.home.track("home-sort"))
                     .on_click(cx.listener(|w, _, _, cx| { w.home.sort_menu = !w.home.sort_menu; cx.notify(); })),
             )
@@ -688,7 +688,7 @@ impl Workspace {
                         .when(sorted && self.home.sort_menu, |d| d.bg(Theme::fill_hover_strong()))
                         .child(crate::settings::label(c.label()))
                         .when(sorted, |d| {
-                            d.child(icon("sort-down", 12., Theme::text()))
+                            d.child(icon("sort-down", 12., Theme::icon()))
                                 .cursor_pointer()
                                 .on_click(cx.listener(|w, _, _, cx| {
                                     w.home.sort_menu = !w.home.sort_menu;

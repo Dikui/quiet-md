@@ -428,7 +428,7 @@ impl Workspace {
         div().flex_none().flex().items_center().gap(px(8.))
             .when(customized, |d| d.child(crate::settings::link_button("shortcuts-reset-all", tr("全部恢复默认", "Reset all")).on_click(cx.listener(|w, _, _, cx| w.reset_all_shortcuts(cx)))))
             .child(div().w(px(200.)).h(px(28.)).px(px(8.)).flex().items_center().gap(px(6.)).rounded(px(8.)).bg(Theme::fill_hover())
-                .child(crate::ui::icon("search", 14., Theme::text_caption()))
+                .child(crate::ui::icon("search", 14., Theme::icon()))
                 .child(div().flex_1().min_w_0().child(self.settings_filter.clone())))
             .into_any_element()
     }

@@ -289,7 +289,7 @@ impl R<'_> {
                 .rounded(px(RADIUS))
                 .cursor_pointer()
                 .hover(|s| s.bg(Theme::fill_hover_strong()))
-                .child(icon(name, 18., Theme::text_caption()))
+                .child(icon(name, 18., Theme::icon()))
         };
         let toolbar = tools.then(|| {
             div()
@@ -707,7 +707,7 @@ impl Editor {
                         )
                     })),
             )
-            .child(div().ml(px(10.)).child(icon("calendar", 16., theme::c(craft::N500))))
+            .child(div().ml(px(10.)).child(icon("calendar", 16., Theme::icon())))
             .when(by_date, |d| d.on_mouse_down(MouseButton::Left, cx.listener(|e, _, _, cx| e.cd_open_drop(Drop::Date, cx))));
         let stamp_opt = option("cd-opt-date", by_date)
             .mt(px(16.))
@@ -798,7 +798,7 @@ impl Editor {
             .cursor_pointer()
             .hover(|s| s.bg(Theme::fill_hover_strong()))
             .active(|s| s.bg(Theme::fill_pressed()))
-            .child(icon("x", 18., Theme::text_caption()))
+            .child(icon("x", 18., Theme::icon()))
             .on_click(cx.listener(|e, _, window, cx| e.close_countdown(window, cx)));
         // The dialog: white, radius 16, the deep soft drop; 13pt body.
         let dialog = div()
@@ -959,7 +959,7 @@ impl Editor {
                 .rounded(px(ROW_RADIUS))
                 .cursor_pointer()
                 .hover(|s| s.bg(Theme::fill_hover_strong()))
-                .child(icon(name, 16., Theme::text_caption()))
+                .child(icon(name, 16., Theme::icon()))
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |e, _, _, cx| {

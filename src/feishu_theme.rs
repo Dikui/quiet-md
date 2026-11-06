@@ -287,3 +287,7 @@ impl Theme { pub fn todo_box() -> Hsla { ca(craft::N1000, 0.22) } }
 impl Theme { pub fn code_text() -> Hsla { c(0x4c4d50) } }
 
 pub fn font_swatch(name: Option<&str>) -> Hsla { name.and_then(text_color).unwrap_or(Theme::text()) }
+
+impl Theme {
+    pub fn icon() -> gpui::Hsla { if crate::theme::dark() { Self::text_code() } else { crate::theme::Theme::icon() } }
+}

@@ -71,7 +71,7 @@ pub fn card(on_close: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> 
         .child(div().w_full().min_w_0().flex().items_center().justify_between()
             .child(div().text_size(px(13.)).line_height(px(20.)).font_weight(FontWeight::SEMIBOLD).child(title))
             .child(div().id("changelog-close").size(px(20.)).flex().items_center().justify_center().rounded(px(6.)).cursor_pointer()
-                .hover(|s| s.bg(Theme::fill_hover())).child(icon("x", 12., Theme::text_caption()))
+                .hover(|s| s.bg(Theme::fill_hover())).child(icon("x", 12., Theme::icon()))
                 .on_click(move |e, w, cx| { PENDING.store(false, Ordering::Relaxed); on_close(e, w, cx); })))
         .child(list)
         .into_any_element())

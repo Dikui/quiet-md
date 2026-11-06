@@ -105,7 +105,7 @@ pub fn kind_color(k: &BlockKind) -> Hsla {
 
 /// 32-tall menu row: icon, label, optional right hint.
 fn row(id: impl Into<ElementId>, icon_name: &str, label: impl Into<SharedString>, right: Option<&str>, highlighted: bool) -> Stateful<Div> {
-    row_tinted(id, icon_name, label, right, highlighted, Theme::text(), Theme::text_code())
+    row_tinted(id, icon_name, label, right, highlighted, Theme::text(), Theme::icon())
 }
 
 /// `row` with explicit label / icon colours (active and disabled items).
@@ -136,7 +136,7 @@ fn row_tinted(
         .child(div().ml(px(19.)).flex_1().whitespace_nowrap().child(crate::settings::label(label.into())))
         .when_some(right, |d, r| {
             if r == "›" {
-                d.child(icon("chevron-right", 14., Theme::text_caption()))
+                d.child(icon("chevron-right", 14., Theme::icon()))
             } else {
                 d.child(div().text_size(px(12.)).text_color(Theme::text_caption()).child(r.to_string()))
             }
@@ -379,12 +379,12 @@ impl Editor {
             .bg(if active { Theme::handle_active() } else { Theme::bg_body() })
             .hover(|s| s.bg(Theme::handle_active()))
             .cursor(if add { CursorStyle::PointingHand } else { CursorStyle::OpenHand })
-            .when(add, |d| d.child(icon("plus", 14., Theme::text())))
+            .when(add, |d| d.child(icon("plus", 14., Theme::icon())))
             .when(!add, |d| {
                 // 1px padding, 24px type-icon box (14px glyph, family tint), 14px grip (#8f959e).
                 d.pl(px(1.))
                     .child(div().size(px(24.)).flex().items_center().justify_center().child(icon(kind_icon(&kind), 14., kind_color(&kind))))
-                    .child(icon("grip-vertical", 14., Theme::text_placeholder()))
+                    .child(icon("grip-vertical", 14., Theme::icon()))
             })
             .on_mouse_down(
                 MouseButton::Left,
@@ -526,7 +526,7 @@ impl Editor {
                             .cursor_pointer()
                             .when(n == selected, |d| d.bg(Theme::fill_hover()))
                             .tip_md(it.label, keys, md)
-                            .child(icon(it.icon, 18., Theme::text_code()))
+                            .child(icon(it.icon, 18., Theme::icon()))
                             .on_mouse_move(hover_sel(n))
                             .on_mouse_down(MouseButton::Left, run(kind))
                             .into_any_element(),
@@ -552,7 +552,7 @@ impl Editor {
                     .when(n == selected, |d| d.bg(Theme::fill_hover()))
                     .child(div().size(px(24.)).flex().items_center().justify_center().child(icon(it.icon, 18., crate::feishu_theme::c(it.color))))
                     .child(div().ml(px(16.)).flex_1().text_size(px(14.)).line_height(px(22.)).child(crate::settings::label(it.label)))
-                    .when(sub, |d| d.child(icon("chevron-right", 16., Theme::text_caption())))
+                    .when(sub, |d| d.child(icon("chevron-right", 16., Theme::icon())))
                     .on_mouse_move(hover_sel(n))
                     .when(!sub, |d| d.on_mouse_down(MouseButton::Left, run(kind)))
                     .when(sub, |d| d.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())),
@@ -758,7 +758,7 @@ impl Editor {
                         .when(active, |d| d.bg(Theme::fill_turninto_active()))
                         .hover(|s| s.bg(Theme::fill_hover()))
                         .tip_md(tip, keys, md)
-                        .child(icon(it.icon, 18., if active { Theme::primary() } else { Theme::text_code() }))
+                        .child(icon(it.icon, 18., if active { Theme::primary() } else { Theme::icon() }))
                         .on_mouse_down(MouseButton::Left, act(BlockAct::Turn(k))),
                 );
             }
@@ -794,7 +794,7 @@ impl Editor {
                 let can_in = self.core.can_indent(block);
                 let can_out = self.core.can_outdent(block);
                 let align_row = |id: &'static str, ic: &'static str, label: &'static str, keys: &'static str, a: Align| {
-                    let (t, i) = if align == a { (Theme::primary(), Theme::primary()) } else { (Theme::text(), Theme::text_code()) };
+                    let (t, i) = if align == a { (Theme::primary(), Theme::primary()) } else { (Theme::text(), Theme::icon()) };
                     row_tinted(id, ic, label, None, false, t, i)
                         .tip_right(label, Some(keys))
                         .on_mouse_down(MouseButton::Left, act(BlockAct::Align(a)))
@@ -982,7 +982,7 @@ impl Editor {
             .cursor_pointer()
             .when(open, |d| d.bg(Theme::fill_hover_strong()))
             .hover(|s| s.bg(Theme::fill_hover_strong()))
-            .child(icon("palette", 18., Theme::text_code()))
+            .child(icon("palette", 18., Theme::icon()))
             .on_hover(cx.listener(move |e, hovered: &bool, _, cx| {
                 if *hovered && e.menu.is_none() {
                     e.menu = Some(Menu::CalloutColor { block, section: 0 });
@@ -1248,7 +1248,7 @@ impl Editor {
                     .rounded(px(6.))
                     .border_1()
                     .border_color(Theme::line_border())
-                    .child(icon("search", 14., Theme::text_placeholder()))
+                    .child(icon("search", 14., Theme::icon()))
                     .child(self.lang_field.clone()),
             )
             .child(list);
@@ -1317,7 +1317,7 @@ impl Editor {
                 .w(px(24.))
                 .when(active, |d| d.bg(Theme::fill_turninto_active()))
                 .tip_md(tip, Some(keys), md)
-                .child(icon(ic, 18., if active { Theme::primary() } else { Theme::text_code() }))
+                .child(icon(ic, 18., if active { Theme::primary() } else { Theme::icon() }))
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |e, _, window, cx| {
@@ -1355,7 +1355,7 @@ impl Editor {
                 .on_hover(cx.listener(move |e: &mut Editor, h: &bool, _, cx| e.tb_drop_over(m.clone(), 1, *h, cx)))
         };
         // The chevron flips while its dropdown is open.
-        let chevron = |m: Menu| icon(if dropdown.as_ref() == Some(&m) { "caret-up" } else { "caret-down" }, 12., Theme::text_placeholder());
+        let chevron = |m: Menu| icon(if dropdown.as_ref() == Some(&m) { "caret-up" } else { "caret-down" }, 12., Theme::icon());
         let align_icon = match align {
             Align::Left => "align-left",
             Align::Center => "align-center",
@@ -1378,7 +1378,7 @@ impl Editor {
                     .w(px(44.))
                     .gap(px(6.))
                     .when(matches!(dropdown, Some(Menu::TurnInto)), |d| d.bg(Theme::fill_hover_strong()))
-                    .child(icon(kind_icon(&head_kind), 18., Theme::text_code()))
+                    .child(icon(kind_icon(&head_kind), 18., Theme::icon()))
                     .child(chevron(Menu::TurnInto))
                     .on_hover(hover(Menu::TurnInto))
                     .on_mouse_down(MouseButton::Left, open(Menu::TurnInto)),
@@ -1389,7 +1389,7 @@ impl Editor {
                     .w(px(44.))
                     .gap(px(6.))
                     .when(matches!(dropdown, Some(Menu::Align)), |d| d.bg(Theme::fill_hover_strong()))
-                    .child(icon(align_icon, 18., Theme::text_code()))
+                    .child(icon(align_icon, 18., Theme::icon()))
                     .child(chevron(Menu::Align))
                     .on_hover(hover(Menu::Align))
                     .on_mouse_down(MouseButton::Left, open(Menu::Align)),
@@ -1403,7 +1403,7 @@ impl Editor {
                 btn("tb-link")
                     .w(px(24.))
                     .tip_above(crate::settings::text("链接"), Some(crate::shortcuts::hint("editor::Link", "⌘ + K")))
-                    .child(icon("link", 18., Theme::text_code()))
+                    .child(icon("link", 18., Theme::icon()))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|e, _, window, cx| {
@@ -1419,7 +1419,7 @@ impl Editor {
                 btn("tb-more")
                     .w(px(24.))
                     .when(matches!(dropdown, Some(Menu::TbMore)), |d| d.bg(Theme::fill_hover_strong()))
-                    .child(icon("layout-grid", 18., Theme::text_code()))
+                    .child(icon("layout-grid", 18., Theme::icon()))
                     .on_hover(hover(Menu::TbMore))
                     .on_mouse_down(
                         MouseButton::Left,
@@ -1454,7 +1454,7 @@ impl Editor {
             }
             Some(Menu::Align) => {
                 let item = |id: &'static str, ic: &'static str, label: &'static str, keys: &'static str, a: Align| {
-                    let (t, i) = if align == a { (Theme::primary(), Theme::primary()) } else { (Theme::text(), Theme::text_code()) };
+                    let (t, i) = if align == a { (Theme::primary(), Theme::primary()) } else { (Theme::text(), Theme::icon()) };
                     row_tinted(id, ic, label, None, false, t, i).tip_above(label, Some(keys)).on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |e, _, window, cx| {
@@ -1567,7 +1567,7 @@ impl Editor {
                     .justify_center()
                     .hover(|s| s.bg(fill()))
                     .when(open, |d| d.bg(fill()))
-                    .child(icon(if open { "caret-up" } else { "caret-down" }, 12., Theme::text_placeholder()))
+                    .child(icon(if open { "caret-up" } else { "caret-down" }, 12., Theme::icon()))
                     .on_hover(cx.listener(|e, h: &bool, _, cx| e.tb_drop_over(Menu::Color, 0, *h, cx)))
                     .on_mouse_down(
                         MouseButton::Left,
@@ -1671,14 +1671,14 @@ impl Editor {
                 .on_hover(cx.listener(move |e: &mut Editor, h: &bool, _, cx| e.tb_drop_over(m.clone(), 1, *h, cx)))
         };
         // The chevron flips while its dropdown is open.
-        let chevron = |m: Menu| icon(if dropdown.as_ref() == Some(&m) { "caret-up" } else { "caret-down" }, 12., Theme::text_placeholder());
+        let chevron = |m: Menu| icon(if dropdown.as_ref() == Some(&m) { "caret-up" } else { "caret-down" }, 12., Theme::icon());
         let mark_btn = |id: &'static str, ic: &'static str, tip: &'static str, keys: &'static str, md: Option<&'static str>, mark: Mark, get: fn(&Marks) -> bool| {
             let active = self.mark_active(get);
             btn(id)
                 .w(px(24.))
                 .when(active, |d| d.bg(Theme::fill_turninto_active()))
                 .tip_md(tip, Some(keys), md)
-                .child(icon(ic, 18., if active { Theme::primary() } else { Theme::text_code() }))
+                .child(icon(ic, 18., if active { Theme::primary() } else { Theme::icon() }))
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |e, _, window, cx| {
@@ -1693,7 +1693,7 @@ impl Editor {
             btn("ttb-merge")
                 .w(px(24.))
                 .tip_above(crate::settings::text("拆分单元格"), None)
-                .child(icon("split-cells", 18., Theme::text_code()))
+                .child(icon("split-cells", 18., Theme::icon()))
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(|e, _, window, cx| {
@@ -1707,7 +1707,7 @@ impl Editor {
             btn("ttb-merge")
                 .w(px(24.))
                 .tip_above(crate::settings::text("合并单元格"), None)
-                .child(icon("merge-cells", 18., Theme::text_code()))
+                .child(icon("merge-cells", 18., Theme::icon()))
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(|e, _, window, cx| {
@@ -1744,7 +1744,7 @@ impl Editor {
                     .w(px(24.))
                     .when(matches!(dropdown, Some(Menu::CellBg)), |d| d.bg(Theme::fill_hover_strong()))
                     .when(!matches!(dropdown, Some(Menu::CellBg)), |d| d.tip_above(crate::settings::text("单元格背景颜色"), None))
-                    .child(icon("palette", 18., Theme::text_code()))
+                    .child(icon("palette", 18., Theme::icon()))
                     .on_mouse_down(MouseButton::Left, toggle(Menu::CellBg)),
             )
             .child(sep())
@@ -1753,7 +1753,7 @@ impl Editor {
                     .w(px(44.))
                     .gap(px(6.))
                     .when(matches!(dropdown, Some(Menu::TurnInto)), |d| d.bg(Theme::fill_hover_strong()))
-                    .child(icon(kind_icon(&head_kind), 18., Theme::text_code()))
+                    .child(icon(kind_icon(&head_kind), 18., Theme::icon()))
                     .child(chevron(Menu::TurnInto))
                     .on_hover(hover(Menu::TurnInto))
                     .on_mouse_down(MouseButton::Left, open(Menu::TurnInto)),
@@ -1764,7 +1764,7 @@ impl Editor {
                     .w(px(44.))
                     .gap(px(6.))
                     .when(matches!(dropdown, Some(Menu::Align)), |d| d.bg(Theme::fill_hover_strong()))
-                    .child(icon(align_icon, 18., Theme::text_code()))
+                    .child(icon(align_icon, 18., Theme::icon()))
                     .child(chevron(Menu::Align))
                     .on_hover(hover(Menu::Align))
                     .on_mouse_down(MouseButton::Left, open(Menu::Align)),
@@ -1782,7 +1782,7 @@ impl Editor {
                 btn("ttb-del")
                     .w(px(24.))
                     .tip_above(label, None)
-                    .child(icon("bin", 18., if self.tables.danger { Theme::danger() } else { Theme::text_code() }))
+                    .child(icon("bin", 18., if self.tables.danger { Theme::danger() } else { Theme::icon() }))
                     .on_hover(cx.listener(|e, hovered: &bool, _, cx| {
                         if e.tables.danger != *hovered {
                             e.tables.danger = *hovered;
@@ -1832,7 +1832,7 @@ impl Editor {
             }
             Some(Menu::Align) => {
                 let item = |id: &'static str, ic: &'static str, label: &'static str, active: bool, keys: Option<&'static str>| {
-                    let (t, i) = if active { (Theme::primary(), Theme::primary()) } else { (Theme::text(), Theme::text_code()) };
+                    let (t, i) = if active { (Theme::primary(), Theme::primary()) } else { (Theme::text(), Theme::icon()) };
                     let r = row_tinted(id, ic, label, None, false, t, i).when(active, |d| d.child(icon("check", 14., Theme::primary())));
                     match keys {
                         Some(k) => r.tip_right(label, Some(k)),

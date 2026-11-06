@@ -19,7 +19,6 @@ pub enum SlashKind {
     Grid,
     Callout,
     Formula,
-    SubPageList,
     Countdown,
     Button,
     File,
@@ -172,13 +171,6 @@ pub const SLASH_ITEMS: &[SlashItem] = &[
         keywords: &["gongshi", "gs", "latex", "formula", "equation", "math"],
     },
     SlashItem { kind: SlashKind::Button, label: "按钮", icon: "button", color: BLUE, group: 1, keywords: &["按钮", "anniu", "an", "button"] },
-    SlashItem {
-        kind: SlashKind::SubPageList,
-        label: "子页面列表",
-        icon: "list-tree", color: BLUE,
-        group: 1,
-        keywords: &["ziyemianliebiao", "zymlb", "子页面", "子文档", "subpage", "catalog", "mulu"],
-    },
     SlashItem {
         kind: SlashKind::Reminder,
         label: "日期提醒",

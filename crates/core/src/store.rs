@@ -9,10 +9,14 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use crate::time::now;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::UNIX_EPOCH;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Meta {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root_order: Option<u64>,
     pub created: u64,
     pub modified: u64,
     #[serde(default)]
@@ -52,7 +56,7 @@ fn catalogue_closed_default() -> bool { true }
 impl Default for Meta {
     fn default() -> Self {
         Self {
-            created: 0, modified: 0, pinned: false, opened: 0,
+            folder: None, root_order: None, created: 0, modified: 0, pinned: false, opened: 0,
             width: PageWidth::default(), catalogue_closed: true,
             parent: None, order: 0, starred: 0, reading: false,
             info: InfoRow::default(), refs_hidden: false,
@@ -208,7 +212,10 @@ impl Drop for WriteLock {
 
 /// Version of the on-disk layout, kept in `format.json`. Bump it when a
 /// change would make older builds misread the library.
-pub const FORMAT: u32 = 1;
+pub const FORMAT: u32 = 2;
+
+#[path = "folders.rs"]
+mod folders;
 
 #[derive(Serialize, Deserialize)]
 struct FormatMarker {
@@ -345,7 +352,7 @@ impl Store {
         let mut warnings = vec![];
         let marker = root.join("format.json");
         match std::fs::read(&marker).ok().and_then(|b| serde_json::from_slice::<FormatMarker>(&b).ok()) {
-            Some(m) if m.format > FORMAT => warnings.push("这个文档库由更新版本的 Quiet.md 创建，部分内容可能无法正确显示，请升级后再编辑".into()),
+            Some(m) if m.format > FORMAT => anyhow::bail!("这个文档库由更新版本的 Quiet.md 创建，请升级后再打开"),
             Some(_) => {}
             None => write_atomic(&marker, &serde_json::to_vec_pretty(&FormatMarker { format: FORMAT })?)?,
         }
@@ -369,6 +376,7 @@ impl Store {
                 });
             }
         }
+        store.migrate_folders()?;
         Ok(store)
     }
 
@@ -447,6 +455,11 @@ impl Store {
             });
             let Parsed { title, icon, body, reminders, links } = parsed;
             out.push(Entry { id, meta: meta.clone(), title, icon, body, reminders, links });
+        }
+        for (id, meta) in &self.index {
+            if let Some(title) = &meta.folder {
+                out.push(Entry { id: id.clone(), meta: meta.clone(), title: title.clone(), icon: None, body: String::new(), reminders: vec![], links: vec![] });
+            }
         }
         let seen: std::collections::HashSet<&str> = out.iter().map(|e| e.id.as_str()).collect();
         self.parsed.retain(|id, _| seen.contains(id.as_str()));
@@ -530,7 +543,7 @@ impl Store {
         trash.insert(id.to_string(), Trashed { meta, deleted: now(), root: root.map(str::to_string) });
         save_json(&self.root.join("trash/index.json"), &trash)?;
         self.trash = trash;
-        std::fs::rename(self.path(id), target)?;
+        if self.index.get(id).is_none_or(|m| m.folder.is_none()) { std::fs::rename(self.path(id), target)?; }
         self.index.remove(id);
         // Content has moved: cleanup failure must not report deletion as failed.
         if let Err(e) = self.save_index() {
@@ -608,7 +621,7 @@ impl Store {
         }
         if readable {
             let before = self.trash.len();
-            self.trash.retain(|id, _| on_disk.contains(id));
+            self.trash.retain(|id, t| t.meta.folder.is_some() || on_disk.contains(id));
             dirty |= self.trash.len() != before;
         }
         let cutoff = now().saturating_sub(TRASH_DAYS * 86_400);
@@ -631,7 +644,7 @@ impl Store {
                 let doc = std::fs::read_to_string(self.trash_path(id)).ok().and_then(|x| docxml::parse(&x).ok()).unwrap_or_default();
                 TrashEntry {
                     id: id.clone(),
-                    title: doc.title.text.clone(),
+                    title: t.meta.folder.clone().unwrap_or_else(|| doc.title.text.clone()),
                     icon: doc.icon.clone(),
                     deleted: t.deleted,
                     parent: t.meta.parent.clone(),
@@ -663,17 +676,19 @@ impl Store {
         self.index = index;
         for k in &group {
             if !self.trash.contains_key(k) { continue; }
-            std::fs::rename(self.trash_path(k), self.path(k)).with_context(|| format!("恢复文档 {k} 失败，已恢复的文档保留在文档库"))?;
+            if self.trash.get(k).is_none_or(|t| t.meta.folder.is_none()) { std::fs::rename(self.trash_path(k), self.path(k)).with_context(|| format!("恢复文档 {k} 失败，已恢复的文档保留在文档库"))?; }
             self.trash.remove(k);
         }
         if let Err(e) = self.save_trash() {
             self.warnings.push(format!("文档已恢复，回收站索引清理失败：{e}"));
         }
+        drop(_lock);
+        self.migrate_folders()?;
         Ok(moved)
     }
 
     fn index_has(&self, id: &str) -> bool {
-        self.index.contains_key(id) && self.path(id).exists()
+        self.index.get(id).is_some_and(|m| m.folder.is_some() || self.path(id).exists())
     }
 
     /// 彻底删除 a page from the 回收站, with the pages that went with it.
@@ -734,6 +749,15 @@ impl Store {
     /// 重命名 a document that isn't open: rewrite its title on disk.
     pub fn rename(&mut self, id: &str, title: &str) -> Result<Meta> {
         let _lock = self.begin_write()?;
+        if self.index.get(id).is_some_and(|m| m.folder.is_some()) {
+            let previous = self.index.clone();
+            let m = self.index.get_mut(id).unwrap();
+            m.folder = Some(title.to_string());
+            m.modified = now();
+            let meta = m.clone();
+            if let Err(e) = self.save_index() { self.index = previous; return Err(e); }
+            return Ok(meta);
+        }
         let mut doc = self.load(id)?;
         doc.title = crate::model::RichText::plain(title);
         self.save_now(id, &doc)
@@ -751,13 +775,8 @@ impl Store {
 
     /// 移动到: hang `id` under `parent` (`None` = top level of 我的文档库), as its last child.
     pub fn set_parent(&mut self, id: &str, parent: Option<&str>) -> Result<Meta> {
-        let _lock = self.begin_write()?;
-        let m = self.index.get_mut(id).ok_or_else(|| anyhow::anyhow!("文档不存在"))?;
-        m.parent = parent.map(str::to_string);
-        m.order = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
-        let m = m.clone();
-        self.save_index()?;
-        Ok(m)
+        self.move_in_tree(id, parent, None)?;
+        Ok(self.index[id].clone())
     }
 
     /// 收藏 / 取消收藏; returns the new 收藏时间 (0: not starred).

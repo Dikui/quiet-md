@@ -174,6 +174,7 @@ pub struct RowMenu {
 pub enum View {
     Doc,
     Home,
+    Folder,
     Trash,
     Settings,
 }
@@ -232,6 +233,9 @@ pub struct Workspace {
     pub sidebar_width: f32,
     /// The resize handle is being dragged.
     pub sidebar_drag: bool,
+    pub folder_current: Option<String>,
+    pub create_menu: Option<(Option<String>, Point<Pixels>)>,
+    pub folder_drag: crate::sidebar_drag::SidebarDrag,
     /// The search dialog (command-center style) is open.
     pub search_open: bool,
     pub status: SaveStatus,
@@ -337,7 +341,7 @@ impl Workspace {
             cx.observe_window_appearance(window, |this, _, cx| if crate::settings::sync_dark(cx) { crate::settings::refresh_all(this, cx); }),
             cx.observe_window_activation(window, |this, window, cx| {
                 if window.is_window_active() { if let Some(id) = &this.current { crate::quick_note::used(id, cx); } this.entries = this.store.list(); this.sort(); crate::update::check_if_stale(cx); cx.notify(); }
-                else { this.cancel_shortcut_recording(cx); this.flush(cx); }
+                else { this.end_folder_drag(true, cx); this.cancel_shortcut_recording(cx); this.flush(cx); }
             }),
             cx.subscribe_in(&search, window, |this, _, ev: &TextFieldEvent, window, cx| {
                 match ev {
@@ -407,6 +411,9 @@ impl Workspace {
             sidebar_open: !quick,
             sidebar_width,
             sidebar_drag: false,
+            folder_current: None,
+            create_menu: None,
+            folder_drag: Default::default(),
             search_open: false,
             status: SaveStatus::Idle,
             row_menu: None,
@@ -466,6 +473,7 @@ impl Workspace {
 
     /// Most recently modified first.
     pub(crate) fn sort(&mut self) {
+        self.reapply_pending_tree_moves();
         self.entries.sort_by_key(|e| std::cmp::Reverse(e.meta.modified));
     }
 
@@ -480,6 +488,7 @@ impl Workspace {
     /// Show `id`; false when it could not be opened (or the open document
     /// could not be saved first, see [`Self::save_before`]).
     pub fn try_open(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.entries.iter().any(|e| e.id == id && e.meta.folder.is_some()) { return self.open_folder(id, window, cx); }
         if self.view != View::Doc {
             self.view = View::Doc;
             cx.notify();
@@ -587,7 +596,11 @@ impl Workspace {
         if !self.save_before(cx, |w, window, cx| w.new_doc(window, cx)) {
             return;
         }
-        match self.store.create() {
+        let parent = self.creation_parent();
+        match self.store.create().and_then(|(id, doc)| {
+            if let Some(parent) = &parent { self.store.set_parent(&id, Some(parent))?; }
+            Ok((id, doc))
+        }) {
             Ok((id, _)) => {
                 self.search_open = false;
                 self.doc_info = None;
@@ -666,11 +679,15 @@ impl Workspace {
             self.editor_sub = None;
         }
         self.entries.retain(|e| !deleted.contains(&e.id));
+        if self.folder_current.as_ref().is_some_and(|id| deleted.contains(id)) {
+            self.folder_current = None;
+            if self.view == View::Folder { self.view = View::Home; }
+        }
         if let Some(b) = self.batch.as_mut() {
             b.retain(|id| !deleted.contains(id));
         }
         self.row_menu = None;
-        if self.current.is_none() {
+        if self.current.is_none() && self.view != View::Folder {
             // Stay on 主页 / 回收站 if that's where the delete came from.
             // The last document gone leaves the library empty (主页's empty
             // state), not a new 未命名 document.
@@ -1086,7 +1103,7 @@ impl Workspace {
             .w(px(width)).h(px(32.)).no_drag().flex().items_center().gap(px(8.)).px(px(10.))
             .rounded(px(9.)).bg(Theme::fill_hover())
             .cursor_pointer().hover(|s| s.bg(Theme::fill_hover_strong()))
-            .child(icon("search", 15., Theme::text_caption()))
+            .child(icon("search", 15., Theme::icon()))
             .child(div().flex_1().min_w_0().truncate().text_size(px(13.)).text_color(Theme::text_caption()).child(crate::settings::tr("搜索文档…", "Search documents…")))
             .when(width >= 200., |d| d.child(div().flex_none().text_size(px(11.)).text_color(Theme::text_placeholder()).child(crate::shortcuts::hint("workspace::FocusSearch", "⌘ + J").replace(" + ", " "))))
             .tip(crate::settings::tr("搜索文档", "Search documents"), Some(crate::shortcuts::hint("workspace::FocusSearch", "⌘ + J")))
@@ -1114,7 +1131,7 @@ impl Workspace {
             .map(|id| self.ancestors(id).iter().map(|e| (e.id.clone(), display_title(&e.title), e.icon.clone())).collect())
             .unwrap_or_default();
         let mut crumbs: Vec<AnyElement> = vec![];
-        let sep = || div().mx(px(3.)).flex_none().child(icon("chevron-right", 12., theme::c(craft::N500))).into_any_element();
+        let sep = || div().mx(px(3.)).flex_none().child(icon("chevron-right", 12., Theme::icon())).into_any_element();
         for (i, (id, name, em)) in chain.iter().enumerate() {
             if chain.len() > 2 && i > 0 && i < chain.len() - 1 {
                 if i == 1 {
@@ -1287,6 +1304,8 @@ impl Render for Workspace {
         let row_menu = self.render_row_menu(window, cx);
         let resize = self.sidebar_open.then(|| self.render_resize_handle(window, cx));
         let resize_overlay = self.render_resize_overlay(cx);
+        let folder_drag_overlay = self.render_folder_drag_overlay(cx);
+        let create_menu = self.render_create_menu(cx);
         let search = self.render_search(window, cx);
         let doc_menu = self.render_doc_menu(window, cx);
         let doc_info = self.render_doc_info(cx);
@@ -1321,6 +1340,7 @@ impl Render for Workspace {
                 )
                 .into_any_element(),
             View::Home => self.render_home(window, cx),
+            View::Folder => self.render_folder(cx),
             View::Trash => self.render_trash(cx),
             View::Settings => self.render_settings(cx),
         };
@@ -1352,6 +1372,8 @@ impl Render for Workspace {
             .text_color(Theme::text())
             // Window keys act on the window they were pressed in, not on
             // whichever window macOS considers active.
+            .on_mouse_move(cx.listener(|w, ev: &MouseMoveEvent, window, cx| w.track_sidebar_press(ev, window, cx)))
+            .on_mouse_up(MouseButton::Left, cx.listener(|w, _, window, cx| w.finish_sidebar_click(window, cx)))
             .on_action(cx.listener(|w, _: &CloseWindow, window, cx| {
                 crate::quick_note::persist(cx);
                 if w.save_before(cx, |_, window, _| window.remove_window()) { window.remove_window(); }
@@ -1403,6 +1425,9 @@ impl Render for Workspace {
             }))
             // Esc leaves 批量操作 (closing its menu or confirmation first), even from the editor.
             .capture_key_down(cx.listener(|w, ev: &KeyDownEvent, _, cx| {
+                if ev.keystroke.key == "escape" && w.folder_drag.active.is_some() {
+                    w.end_folder_drag(true, cx); cx.stop_propagation(); return;
+                }
                 if w.record_shortcut(ev, cx) { return; }
                 // Esc cancels a confirmation dialog.
                 if ev.keystroke.key == "escape" && (w.confirm.is_some() || w.export_md.is_some()) {
@@ -1444,6 +1469,8 @@ impl Render for Workspace {
             .children(export_md)
             .children(search)
             .children(resize_overlay)
+            .children(folder_drag_overlay)
+            .children(create_menu)
             .children(toast)
     }
 }
