@@ -97,6 +97,12 @@ A 120 Hz display gives each frame 8.3 ms. Even at P95 on a million-character doc
 - **Shortcuts**: press `⌘ /` (`Ctrl+/` on Windows) to see them all. Every one can be rebound. On Windows, Ctrl stands in for ⌘ and Alt for ⌥; the app and the Getting started guides show the keys for your system.
 - **Themes**: four built-in styles — Craft, Feishu, Notion and Obsidian — each with a dark variant, or write your own in CSS; see [docs/THEMES.md](docs/THEMES.md).
 
+## Contributors
+
+Thanks to everyone who has helped build Quiet.md. Issues and pull requests are welcome: building, testing and code conventions are in [CONTRIBUTING.md](CONTRIBUTING.md) (written in Chinese for now).
+
+[![Contributors](https://contrib.rocks/image?repo=s1dashu/quiet-md)](https://github.com/s1dashu/quiet-md/graphs/contributors)
+
 ## Recent updates
 
 - **0.1.5** (Nov 5): the app is now called Quiet.md; your library and notes stay where they were.
@@ -112,12 +118,6 @@ A 120 Hz display gives each frame 8.3 ms. Even at P95 on a million-character doc
 - **0.1.1** (Nov 3): first Windows x64 release, installed per user, keeping your notes on uninstall. Polished the Chinese and English interface and the built-in guide.
 
 Full notes for each version are on [Releases](https://github.com/s1dashu/quiet-md/releases).
-
-## Contributors
-
-Thanks to everyone who has helped build Quiet.md. Issues and pull requests are welcome: building, testing and code conventions are in [CONTRIBUTING.md](CONTRIBUTING.md) (written in Chinese for now).
-
-[![Contributors](https://contrib.rocks/image?repo=s1dashu/quiet-md)](https://github.com/s1dashu/quiet-md/graphs/contributors)
 
 ## License
 
