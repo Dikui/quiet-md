@@ -63,7 +63,7 @@
 - **macOS**: unzip and drag `quiet.md.app` into Applications. The app is signed and notarized by Apple.
 - **Windows**: run the installer. By default it installs for the current user only, and uninstalling never deletes your notes. If SmartScreen appears on first launch, click **More info → Run anyway**.
 
-You can also download from [Quiet.md](https://quiet.md/?lang=en). Every release and its SHA-256 checksums are on [GitHub Releases](https://github.com/s1dashu/quiet-md/releases). There is no Intel Mac build yet; you can [build from source](CONTRIBUTING.md#从源码构建).
+You can also download from [Quiet.md](https://quiet.md/?lang=en). Every release and its SHA-256 checksums are on [GitHub Releases](https://github.com/s1dashu/quiet-md/releases). There is no Intel Mac build yet; you can [build from source](CONTRIBUTING.md#building-from-source).
 
 On first launch, Quiet.md puts a **Getting started** guide into an empty library — a ten-minute tour of the main features. Existing notes are never overwritten.
 
@@ -99,7 +99,7 @@ A 120 Hz display gives each frame 8.3 ms. Even at P95 on a million-character doc
 
 ## Contributors
 
-Thanks to everyone who has helped build Quiet.md. Issues and pull requests are welcome: building, testing and code conventions are in [CONTRIBUTING.md](CONTRIBUTING.md) (written in Chinese for now).
+Thanks to everyone who has helped build Quiet.md. Issues and pull requests are welcome: building, testing and code conventions are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 [![Contributors](https://contrib.rocks/image?repo=s1dashu/quiet-md)](https://github.com/s1dashu/quiet-md/graphs/contributors)
 
