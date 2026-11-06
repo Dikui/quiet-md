@@ -1,7 +1,7 @@
 use crate::app::{View, Workspace};
 use crate::settings::{display_title, tr};
 use crate::theme::Theme;
-use crate::ui::{icon, popover, ui_text};
+use crate::ui::{TipExt, TitleBarExt, icon, popover, ui_text};
 use gpui::*;
 
 impl Workspace {
@@ -49,6 +49,7 @@ impl Workspace {
         if !self.save_before(cx, move |w, window, cx| { w.open_folder(&target, window, cx); }) { return false; }
         self.editor = None;
         self.current = None;
+        if self.folder_current.as_deref() != Some(id) { self.reset_folder_scroll(); }
         self.folder_current = Some(id.to_string());
         self.view = View::Folder;
         self.row_menu = None;
@@ -95,36 +96,53 @@ impl Workspace {
         )).with_priority(3).into_any_element())
     }
 
-    pub(crate) fn render_folder(&self, cx: &mut Context<Self>) -> AnyElement {
+    /// A folder's page: one header row (the path on the left, the actions on
+    /// the right), then its contents in the view 主页 shows.
+    pub(crate) fn render_folder(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let id = self.folder_current.clone().unwrap_or_default();
         let title = self.entries.iter().find(|e| e.id == id).map(|e| display_title(&e.title)).unwrap_or_else(|| tr("文件夹", "Folder").to_string());
-        let mut breadcrumbs = div().flex().items_center().gap(px(8.)).text_size(px(12.)).text_color(Theme::text_caption())
-            .child(div().id("folder-home").cursor_pointer().child(tr("我的文档", "My documents")).on_click(cx.listener(|w, _, _, cx| w.show_view(View::Home, cx))));
-        for e in self.ancestors(&id) {
-            let target = e.id.clone();
-            breadcrumbs = breadcrumbs.child("/").child(div().id(SharedString::from(format!("folder-path-{}", e.id))).cursor_pointer().child(ui_text(display_title(&e.title)))
-                .on_click(cx.listener(move |w, _, window, cx| w.open(&target, window, cx))));
+        // 我的文档 › … › parent › this folder; a long path folds its middle into "…".
+        let sep = || div().mx(px(4.)).flex_none().child(icon("chevron-right", 12., Theme::icon()));
+        let link = |key: String, label: String, target: Option<String>| {
+            div().id(SharedString::from(format!("folder-crumb-{key}"))).no_drag().flex_none().max_w(px(220.)).px(px(4.)).rounded(px(6.))
+                .overflow_hidden().whitespace_nowrap().text_ellipsis().cursor_pointer()
+                .text_color(Theme::text_caption()).hover(|s| s.text_color(Theme::text()))
+                .child(ui_text(label))
+                .on_click(cx.listener(move |w, _, window, cx| match &target { Some(t) => w.open(t, window, cx), None => w.show_view(View::Home, cx) }))
+        };
+        let path = self.ancestors(&id);
+        let mut crumbs = div().min_w_0().flex().items_center().text_size(px(17.)).line_height(px(24.))
+            .child(link("home".into(), tr("我的文档", "My documents").into(), None));
+        for (i, e) in path.iter().enumerate() {
+            if path.len() > 2 && i > 0 && i < path.len() - 1 {
+                if i == 1 {
+                    let hidden: Vec<String> = path[1..path.len() - 1].iter().map(|e| display_title(&e.title)).collect();
+                    crumbs = crumbs.child(sep()).child(div().id("folder-crumb-more").flex_none().px(px(4.)).text_color(Theme::text_caption()).tip(&hidden.join(" / "), None).child("…"));
+                }
+                continue;
+            }
+            crumbs = crumbs.child(sep()).child(link(e.id.clone(), display_title(&e.title), Some(e.id.clone())));
         }
-        let folder = id.clone();
-        let doc = id.clone();
-        let children: Vec<_> = crate::tree::Tree::new(&self.entries).children(Some(&id)).iter().map(|e| (*e).clone()).collect();
-        let mut list = div().id("folder-contents").flex_1().min_h_0().overflow_y_scroll().px(px(36.)).py(px(12.));
-        if children.is_empty() { list = list.child(div().py(px(80.)).text_center().text_size(px(14.)).text_color(Theme::text_caption()).child(tr("这个文件夹还是空的", "This folder is empty"))); }
-        for e in children {
-            let target = e.id.clone();
-            list = list.child(div().id(SharedString::from(format!("folder-entry-{}", e.id))).h(px(44.)).px(px(12.)).rounded(px(8.)).flex().items_center().gap(px(12.))
-                .cursor_pointer().hover(|s| s.bg(Theme::fill_hover())).text_size(px(14.))
-                .child(icon(if e.meta.folder.is_some() { "folder" } else { "doc" }, 18., Theme::icon()))
-                .child(ui_text(display_title(&e.title))).on_click(cx.listener(move |w, _, window, cx| w.open(&target, window, cx))));
-        }
-        div().size_full().flex().flex_col()
-            .child(crate::trash::page_header(self, tr("文件夹", "Folder"), 26., cx))
-            .child(div().px(px(48.)).pt(px(28.)).pb(px(24.)).child(breadcrumbs)
-                .child(div().mt(px(24.)).flex().items_center().gap(px(12.)).child(icon("folder", 28., Theme::icon())).child(div().text_size(px(28.)).font_weight(FontWeight::SEMIBOLD).child(ui_text(title)))))
-            .child(div().px(px(48.)).pb(px(16.)).flex().gap(px(10.))
-                .child(crate::trash::secondary_button("folder-new-doc", tr("新建文档", "New document")).on_click(cx.listener(move |w, _, window, cx| w.new_child(&doc, window, cx))))
-                .child(crate::trash::secondary_button("folder-new-folder", tr("新建文件夹", "New folder")).on_click(cx.listener(move |w, _, window, cx| w.new_folder(Some(folder.clone()), window, cx)))))
-            .child(list).into_any_element()
+        crumbs = crumbs.child(sep()).child(div().min_w_0().px(px(4.)).overflow_hidden().whitespace_nowrap().text_ellipsis()
+            .font_weight(FontWeight::SEMIBOLD).text_color(Theme::text()).child(ui_text(title)));
+        let action = |key: &'static str, glyph: &'static str, label: &'static str| div().id(key).no_drag().flex_none().h(px(28.)).px(px(10.))
+            .flex().items_center().gap(px(6.)).rounded(px(9.)).cursor_pointer().text_size(px(13.)).line_height(px(20.)).text_color(Theme::text())
+            .hover(|s| s.bg(Theme::fill_hover())).child(icon(glyph, 14., Theme::icon())).child(label);
+        let (folder, doc) = (id.clone(), id.clone());
+        let header = crate::trash::page_header_with(self, crumbs, 26., cx)
+            .child(div().flex_none().flex().items_center().gap(px(4.))
+                .child(action("folder-new-doc", "plus", tr("新建文档", "New document")).on_click(cx.listener(move |w, _, window, cx| w.new_child(&doc, window, cx))))
+                .child(action("folder-new-folder", "folder-plus", tr("新建文件夹", "New folder")).on_click(cx.listener(move |w, _, window, cx| w.new_folder(Some(folder.clone()), window, cx))))
+                .child(self.view_switch(cx).no_drag().ml(px(12.))));
+        let children = self.level_entries(Some(&id));
+        let body = if children.is_empty() {
+            div().flex_1().pt(px(80.)).text_center().text_size(px(14.)).text_color(Theme::text_caption()).child(tr("这个文件夹还是空的", "This folder is empty")).into_any_element()
+        } else if self.home.grid {
+            self.render_home_grid(&children, true, window, cx)
+        } else {
+            self.render_home_list(&children, true, cx)
+        };
+        div().size_full().flex().flex_col().child(header).child(div().h(px(8.)).flex_none()).child(body).into_any_element()
     }
 
     pub(crate) fn folder_row_menu(&self, m: crate::app::RowMenu, cx: &mut Context<Self>) -> Vec<AnyElement> {

@@ -38,6 +38,7 @@ mod printing;
 mod search;
 mod sidebar;
 mod sidebar_drag;
+mod home_folder;
 mod folders;
 mod settings;
 mod themes;

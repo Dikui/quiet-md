@@ -24,6 +24,11 @@ fn remaining(deleted: u64) -> String {
 /// the same place: a 17pt semibold view title, and the open-sidebar
 /// button when the sidebar is hidden.
 pub(crate) fn page_header(ws: &Workspace, title: &'static str, left: f32, cx: &mut Context<Workspace>) -> Stateful<Div> {
+    page_header_with(ws, div().text_size(px(17.)).line_height(px(24.)).font_weight(FontWeight::SEMIBOLD).child(crate::settings::label(title)), left, cx)
+}
+
+/// `page_header` with any title element (a folder page puts its breadcrumbs there).
+pub(crate) fn page_header_with(ws: &Workspace, title: impl IntoElement, left: f32, cx: &mut Context<Workspace>) -> Stateful<Div> {
     div()
         .id("page-header")
         .h(px(crate::app::HEADER_H))
@@ -58,7 +63,7 @@ pub(crate) fn page_header(ws: &Workspace, title: &'static str, left: f32, cx: &m
                     })),
             )
         })
-        .child(div().text_size(px(17.)).line_height(px(24.)).font_weight(FontWeight::SEMIBOLD).child(crate::settings::label(title)))
+        .child(title)
         .child(div().flex_1())
 }
 

@@ -1305,6 +1305,7 @@ impl Render for Workspace {
         let resize = self.sidebar_open.then(|| self.render_resize_handle(window, cx));
         let resize_overlay = self.render_resize_overlay(cx);
         let folder_drag_overlay = self.render_folder_drag_overlay(cx);
+        let home_drag_overlay = self.render_home_drag_overlay(window, cx);
         let create_menu = self.render_create_menu(cx);
         let search = self.render_search(window, cx);
         let doc_menu = self.render_doc_menu(window, cx);
@@ -1340,7 +1341,7 @@ impl Render for Workspace {
                 )
                 .into_any_element(),
             View::Home => self.render_home(window, cx),
-            View::Folder => self.render_folder(cx),
+            View::Folder => self.render_folder(window, cx),
             View::Trash => self.render_trash(cx),
             View::Settings => self.render_settings(cx),
         };
@@ -1470,6 +1471,7 @@ impl Render for Workspace {
             .children(search)
             .children(resize_overlay)
             .children(folder_drag_overlay)
+            .children(home_drag_overlay)
             .children(create_menu)
             .children(toast)
     }

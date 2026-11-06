@@ -386,6 +386,11 @@ impl Theme {
     pub fn sidebar_hover() -> Hsla { ca(craft::N1000, 0.045) }
     /// Selected sidebar row (measured #DEDEDF).
     pub fn sidebar_selected() -> Hsla { ca(craft::N1000, 0.072) }
+    /// Dragging in the sidebar: the receiving folder's wash, the
+    /// slot the row will land in, and the glow a landed row fades out from.
+    pub fn sidebar_drop() -> Hsla { ca(craft::N1000, 0.05) }
+    pub fn sidebar_drop_slot() -> Hsla { ca(craft::N1000, 0.08) }
+    pub fn sidebar_landed() -> Hsla { ca(craft::N1000, 0.07) }
     /// Section headers on the sidebar.
     pub fn sidebar_section() -> Hsla { c(0x333739) }
     /// Normal monochrome icons: #191919 measured from the supplied Claude Code screenshot.

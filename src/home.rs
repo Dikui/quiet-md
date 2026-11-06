@@ -302,6 +302,9 @@ pub struct Home {
     pub grid: bool,
     grid_scroll: UniformListScrollHandle,
     list_scroll: ScrollHandle,
+    /// A folder's page has its own scroll positions, so 主页 keeps its place.
+    folder_grid_scroll: UniformListScrollHandle,
+    folder_list_scroll: ScrollHandle,
     grid_scrollbar: Rc<scrollbar::Scrollbar>,
     list_scrollbar: Rc<scrollbar::Scrollbar>,
     sort: HomeSort,
@@ -309,6 +312,8 @@ pub struct Home {
     thumbs: RefCell<HashMap<String, (u64, Thumb)>>,
     /// Last-frame bounds of the controls the popovers hang from.
     anchors: Rc<RefCell<HashMap<&'static str, Bounds<Pixels>>>>,
+    /// Folder cards and dragging into them (`home_folder.rs`).
+    pub(crate) folders: crate::home_folder::HomeFolders,
 }
 
 impl Default for Home {
@@ -318,12 +323,15 @@ impl Default for Home {
             grid: true,
             grid_scroll: Default::default(),
             list_scroll: Default::default(),
+            folder_grid_scroll: Default::default(),
+            folder_list_scroll: Default::default(),
             grid_scrollbar: Default::default(),
             list_scrollbar: Default::default(),
             sort: HomeSort::Visited,
             sort_menu: false,
             thumbs: Default::default(),
             anchors: Default::default(),
+            folders: Default::default(),
         }
     }
 }
@@ -381,6 +389,7 @@ fn weight3(mut d: Div) -> Div {
 
 /// A document's icon: its emoji, or the monochrome page glyph.
 fn entry_icon(e: &Entry) -> AnyElement {
+    if e.meta.folder.is_some() { return icon("folder", 22., Theme::icon()).mr(px(13.)).into_any_element(); }
     match &e.icon {
         Some(em) => div().size(px(24.)).mr(px(12.)).flex_none().flex().items_center().justify_center().text_size(px(18.)).child(em.clone()).into_any_element(),
         None => doc_icon().mr(px(12.)).into_any_element(),
@@ -405,11 +414,21 @@ impl Workspace {
         Some(checkbox(if on { Check::On } else { Check::Off }, !on && sel.len() >= BATCH_LIMIT, "home-card"))
     }
 
-    fn home_entries(&self) -> Vec<Entry> {
-        let mut v: Vec<Entry> = match self.home.tab {
-            HomeTab::Recent => self.entries.iter().filter(|e| e.meta.folder.is_none()).cloned().collect(),
-            HomeTab::Starred => self.entries.iter().filter(|e| e.meta.folder.is_none() && e.meta.starred > 0).cloned().collect(),
-        };
+    pub(crate) fn home_entries(&self) -> Vec<Entry> {
+        match self.home.tab {
+            // 我的文档 is the library's top level: its folders, then its loose documents.
+            HomeTab::Recent => self.level_entries(None),
+            HomeTab::Starred => self.sorted_entries(self.entries.iter().filter(|e| e.meta.folder.is_none() && e.meta.starred > 0).cloned().collect()),
+        }
+    }
+
+    /// One level of the tree as 主页 shows it (a folder's page uses it too).
+    pub(crate) fn level_entries(&self, parent: Option<&str>) -> Vec<Entry> {
+        self.sorted_entries(self.entries.iter().filter(|e| e.meta.parent.as_deref() == parent).cloned().collect())
+    }
+
+    /// Folders first, then 主页's sort order.
+    fn sorted_entries(&self, mut v: Vec<Entry>) -> Vec<Entry> {
         v.sort_by(|a, b| {
             let order = match self.home.sort {
                 HomeSort::Visited => visited(b).cmp(&visited(a)),
@@ -417,7 +436,7 @@ impl Workspace {
                 HomeSort::Created => b.meta.created.cmp(&a.meta.created),
                 HomeSort::Title => a.title.cmp(&b.title),
             };
-            order.then_with(|| a.id.cmp(&b.id))
+            b.meta.folder.is_some().cmp(&a.meta.folder.is_some()).then(order).then_with(|| a.id.cmp(&b.id))
         });
         v
     }
@@ -465,7 +484,7 @@ impl Workspace {
         cx.notify();
     }
 
-    fn home_more(&self, e: &Entry, key: String, cx: &mut Context<Self>) -> Stateful<Div> {
+    pub(crate) fn home_more(&self, e: &Entry, key: String, cx: &mut Context<Self>) -> Stateful<Div> {
         let id = e.id.clone();
         let (rec, k2) = (self.more_bounds.clone(), key.clone());
         let open = self.row_menu.as_ref().is_some_and(|m| m.id == e.id && m.pos.x > px(0.) && m.corner == Corner::TopRight);
@@ -492,6 +511,44 @@ impl Workspace {
             }))
     }
 
+    /// The grid / list switcher: one white pill, the current view on a quiet
+    /// fill. 主页 and folder pages share it, so a folder opens in the view its parent showed.
+    pub(crate) fn view_switch(&self, cx: &mut Context<Self>) -> Div {
+        let toggle = |id: &'static str, ic: &'static str, on: bool, tip: &'static str, grid: bool| {
+            div()
+                .id(id)
+                .w(px(30.))
+                .h(px(24.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(7.))
+                .cursor_pointer()
+                .when(on, |d| d.bg(Theme::fill_hover_strong()))
+                .when(!on, |d| d.tip(tip, None).hover(|s| s.bg(Theme::fill_hover())))
+                .child(icon(ic, 14., Theme::icon()))
+                .on_click(cx.listener(move |w, _, _, cx| {
+                    w.home.grid = grid;
+                    w.save_home();
+                    w.home.sort_menu = false;
+                    cx.notify();
+                }))
+        };
+        crate::ui::pill()
+            .p(px(1.))
+            .flex()
+            .gap(px(2.))
+            .rounded(px(9.))
+            .child(toggle("home-grid", "view-grid", self.home.grid, crate::settings::text("切换为宫格视图"), true))
+            .child(toggle("home-list", "view-list", !self.home.grid, crate::settings::text("切换为列表视图"), false))
+    }
+
+    /// A newly opened folder page starts at its top.
+    pub(crate) fn reset_folder_scroll(&self) {
+        self.home.folder_grid_scroll.scroll_to_item(0, ScrollStrategy::Top);
+        self.home.folder_list_scroll.set_offset(point(px(0.), px(0.)));
+    }
+
     /// 主页's view and sort order are remembered (`settings.json`).
     pub(crate) fn load_home(&mut self) {
         let s = self.store.settings();
@@ -513,6 +570,9 @@ impl Workspace {
             .when(narrow, |d| d.child(crate::ui::header_icon("home-search", "search").mr(px(4.))
                 .tip(crate::settings::tr("搜索文档", "Search documents"), Some(crate::shortcuts::hint("workspace::FocusSearch", "⌘ + J")))
                 .on_click(cx.listener(|w, _, window, cx| w.open_search(window, cx)))))
+            .child(crate::ui::header_icon("home-new-folder", "folder-plus")
+                .tip(crate::settings::tr("新建文件夹", "New folder"), None)
+                .on_click(cx.listener(|w, _, window, cx| w.new_folder(None, window, cx))))
             .child(
             crate::ui::header_icon("home-new", "plus")
                 .tip(crate::settings::tr("新建文档", "New document"), Some(crate::shortcuts::hint("workspace::NewDoc", "⌘ + N")))
@@ -537,26 +597,6 @@ impl Workspace {
                 .child(crate::settings::label(label))
                 .on_click(cx.listener(move |w, _, _, cx| {
                     w.home.tab = t;
-                    w.home.sort_menu = false;
-                    cx.notify();
-                }))
-        };
-        let toggle = |id: &'static str, ic: &'static str, on: bool, tip: &'static str, grid: bool| {
-            div()
-                .id(id)
-                .w(px(30.))
-                .h(px(24.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(7.))
-                .cursor_pointer()
-                .when(on, |d| d.bg(Theme::fill_hover_strong()))
-                .when(!on, |d| d.tip(tip, None).hover(|s| s.bg(Theme::fill_hover())))
-                .child(icon(ic, 14., Theme::icon()))
-                .on_click(cx.listener(move |w, _, _, cx| {
-                    w.home.grid = grid;
-                    w.save_home();
                     w.home.sort_menu = false;
                     cx.notify();
                 }))
@@ -615,25 +655,16 @@ impl Workspace {
                     .child(self.home.track("home-sort"))
                     .on_click(cx.listener(|w, _, _, cx| { w.home.sort_menu = !w.home.sort_menu; cx.notify(); })),
             )
-            .child(
-                // The view switcher: one white pill, the current view on a quiet fill.
-                crate::ui::pill()
-                    .ml(px(16.))
-                    .p(px(1.))
-                    .flex()
-                    .gap(px(2.))
-                    .rounded(px(9.))
-                    .child(toggle("home-grid", "view-grid", self.home.grid, crate::settings::text("切换为宫格视图"), true))
-                    .child(toggle("home-list", "view-list", !self.home.grid, crate::settings::text("切换为列表视图"), false)),
+            .child(self.view_switch(cx).ml(px(16.))
             ) };
 
         let entries = self.home_entries();
         let body = if entries.is_empty() && (self.home.grid || self.home.tab == HomeTab::Recent) {
             empty_state("illus/empty-list.svg", crate::settings::text("当前列表暂无内容")).into_any_element()
         } else if self.home.grid {
-            self.render_home_grid(&entries, window, cx)
+            self.render_home_grid(&entries, false, window, cx)
         } else {
-            self.render_home_list(&entries, cx)
+            self.render_home_list(&entries, false, cx)
         };
         div()
             .flex_1()
@@ -647,7 +678,8 @@ impl Workspace {
             .into_any_element()
     }
 
-    fn render_home_list(&self, entries: &[Entry], cx: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn render_home_list(&self, entries: &[Entry], in_folder: bool, cx: &mut Context<Self>) -> AnyElement {
+        let list_scroll = if in_folder { &self.home.folder_list_scroll } else { &self.home.list_scroll };
         let cols = self.home.cols();
         let sort = self.home.sort_col();
         // The title is sized at about three times a column.
@@ -699,7 +731,7 @@ impl Workspace {
             );
         }
         header = header.child(div().w(px(60.)).flex_none());
-        let mut rows = div().id("home-rows").flex_1().min_h_0().overflow_y_scroll().track_scroll(&self.home.list_scroll).px(px(24.)).pb(px(24.));
+        let mut rows = div().id("home-rows").flex_1().min_h_0().overflow_y_scroll().track_scroll(list_scroll).px(px(24.)).pb(px(24.));
         if entries.is_empty() {
             rows = rows.child(div().pt(px(72.)).child(empty_state("illus/empty-list.svg", crate::settings::text("当前列表暂无内容"))));
         }
@@ -742,39 +774,52 @@ impl Workspace {
             rows = rows.child(row);
         }
         div().flex_1().min_h_0().flex().flex_col().child(header.mx(px(24.)))
-            .child(div().relative().flex_1().min_h_0().flex().flex_col().child(rows).child(self.home.list_scrollbar.render(&self.home.list_scroll))).into_any_element()
+            .child(div().relative().flex_1().min_h_0().flex().flex_col().child(rows).child(self.home.list_scrollbar.render(list_scroll))).into_any_element()
     }
 
-    fn render_home_grid(&self, entries: &[Entry], window: &Window, cx: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn render_home_grid(&self, entries: &[Entry], in_folder: bool, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+        let grid_scroll = if in_folder { &self.home.folder_grid_scroll } else { &self.home.grid_scroll };
         let main_w = f32::from(window.viewport_size().width) - if self.sidebar_open { self.sidebar_w(window) } else { 0. };
         let avail = (main_w - 48.).max(1.);
-        let wide_cols = (((avail + 16.) / (200. + 16.)).floor() as usize).max(1);
-        let n = if wide_cols >= 4 { wide_cols } else { (((avail + 16.) / (160. + 16.)).floor() as usize).clamp(1, 3) };
-        let card_h = ((avail - 16. * (n - 1) as f32) / n as f32) * (264. / 236.);
         let entries = entries.to_vec();
+        let mixed = entries.iter().any(|e| e.meta.folder.is_some());
+        // Folders spill past their cell (shadow, tab, the front flaring open), so
+        // a level holding them gets more air between cells.
+        let gap = if mixed { 24. } else { 16. };
+        let wide_cols = (((avail + gap) / (200. + gap)).floor() as usize).max(1);
+        let n = if wide_cols >= 4 { wide_cols } else { (((avail + gap) / (160. + gap)).floor() as usize).clamp(1, 3) };
+        let card_h = ((avail - gap * (n - 1) as f32) / n as f32) * (264. / 236.);
         let rows = entries.len().div_ceil(n);
-        let grid = uniform_list("home-grid-area", rows, cx.processor(move |workspace, range: std::ops::Range<usize>, _, cx| {
+        let grid = uniform_list("home-grid-area", rows, cx.processor(move |workspace, range: std::ops::Range<usize>, window, cx| {
             range.map(|row| {
                 let start = row * n;
                 let end = (start + n).min(entries.len());
-                div().w_full().h(px(card_h + 16.)).px(px(24.)).pb(px(16.))
-                    .grid().grid_cols(n as u16).gap(px(16.))
-                    .children(entries[start..end].iter().map(|e| workspace.render_home_card(e, card_h, cx)))
+                div().w_full().h(px(card_h + gap)).px(px(24.)).pb(px(gap))
+                    .grid().grid_cols(n as u16).gap(px(gap))
+                    .children(entries[start..end].iter().map(|e| if e.meta.folder.is_some() { workspace.render_folder_card(e, card_h, window, cx) }
+                        // Beside folders a document card is the folder's body: same width, same
+                        // bottom, its top level with the folder's below the tab.
+                        else if mixed { div().w_full().min_w_0().h(px(card_h)).flex().flex_col().justify_end()
+                            .child(workspace.render_home_card(e, card_h * (1. - crate::home_folder::TAB), cx)).into_any_element() }
+                        else { workspace.render_home_card(e, card_h, cx) }))
             }).collect()
         }))
         // The last row's own 16 plus 16 more: 32 below the cards, like the
         // list view's 24 and clear of the window's rounded corner.
-        .flex_1().min_h_0().pb(px(16.)).track_scroll(self.home.grid_scroll.clone());
-        let scroll = self.home.grid_scroll.0.borrow().base_handle.clone();
-        div().relative().flex_1().min_h_0().mt(px(10.)).flex().flex_col()
+        // The top padding sits inside the list's clip, so a folder's papers can
+        // rise above the first row without being cut off.
+        .flex_1().min_h_0().pt(px(14.)).pb(px(16.)).track_scroll(grid_scroll.clone());
+        let scroll = grid_scroll.0.borrow().base_handle.clone();
+        div().relative().flex_1().min_h_0().mt(px(-4.)).flex().flex_col()
+            .on_mouse_move(cx.listener(|w, ev: &MouseMoveEvent, _, cx| w.track_home_press(ev, cx)))
             .child(grid).child(self.home.grid_scrollbar.render(&scroll)).into_any_element()
     }
 
-    fn render_home_card(&self, e: &Entry, card_h: f32, cx: &mut Context<Self>) -> AnyElement {
-            let id = e.id.clone();
-            let id2 = e.id.clone();
-            let thumb = self.thumb(e);
-            let page = if thumb.blocks.is_empty() && e.title.trim().is_empty() {
+    /// A document's first page in miniature: a card's face, and the papers
+    /// in a folder that show one (`home_folder.rs`). `pad`: its margin.
+    pub(crate) fn thumb_page(&self, e: &Entry, pad: f32) -> Div {
+        let thumb = self.thumb(e);
+        if thumb.blocks.is_empty() && e.title.trim().is_empty() {
                 div()
                     .size_full()
                     .flex()
@@ -784,7 +829,7 @@ impl Workspace {
                     .child(img("illus/blank-doc.svg").size(px(64.)))
                     .child(div().mt(px(4.)).text_size(px(14.)).line_height(px(22.)).text_color(Theme::text_placeholder()).child(crate::settings::text("空白文档")))
             } else {
-                let mut p = div().size_full().p(px(18.)).overflow_hidden().flex().flex_col();
+                let mut p = div().size_full().p(px(pad)).overflow_hidden().flex().flex_col();
                 p = p.child(div().flex_none().flex().items_start().gap(px(6.)).mb(px(8.))
                     .when_some(e.icon.as_ref(), |d, emoji| d.child(div().flex_none().text_size(px(14.)).line_height(px(20.)).child(emoji.clone())))
                     .child(div().min_w_0().text_size(px(14.)).line_height(px(20.)).font_weight(FontWeight::BOLD).child(e.title.clone())));
@@ -794,13 +839,25 @@ impl Workspace {
                     p = p.child(div().flex_none().mt(px(mt.max(prev) * bs::SCALE)).child(thumb_block(block, 0, Theme::text(), false, &thumb.eqnos)));
                 }
                 p
-            };
+            }
+    }
+
+    fn render_home_card(&self, e: &Entry, card_h: f32, cx: &mut Context<Self>) -> AnyElement {
+            let id = e.id.clone();
+            let id2 = e.id.clone();
+            let thumb = self.thumb(e);
+            let page = self.thumb_page(e, 18.);
             let cover = thumb.cover.as_ref().and_then(|c| crate::store::image_path(&c.src));
             let frame = 4.;
             let menu_on = self.row_menu.as_ref().is_some_and(|m| m.id == e.id);
             let check = self.home_check(e);
+            let (arm, lifted) = (e.id.clone(), self.home_dragging(&e.id));
                 div()
                     .id(SharedString::from(format!("home-card-{}", e.id)))
+                    // Carried away as a paper: the card's place stays as a faint imprint.
+                    .when(lifted, |d| d.opacity(0.28))
+                    .when(check.is_none(), |d| d.on_mouse_down(MouseButton::Left, cx.listener(move |w, ev: &MouseDownEvent, _, _| w.arm_home_drag(&arm, ev.position))))
+                    .child(self.record_home_card(&e.id))
                     .w_full().min_w_0().h(px(card_h)).relative().group("home-card")
                     .flex_none()
                     .bg(Theme::bg_overlay()).p(px(frame))

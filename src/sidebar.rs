@@ -136,7 +136,7 @@ impl Workspace {
         // The nav is just 主页: 36px items, a blue tint when selected. Its
         // icon column (x 17) is shared with 搜索 and the doc rows.
         let home_on = self.view == View::Home;
-        let nav = div().flex_none().pt(px(8.)).pb(px(4.)).px(px(SB_X)).child(
+        let nav = div().flex_none().pt(px(4.)).pb(px(4.)).px(px(SB_X)).child(
             div()
                 .id("nav-home")
                 .h(px(ROW_H))
@@ -390,6 +390,8 @@ impl Workspace {
                 )
                 .on_click(cx.listener(move |w, _, _, cx| {
                     w.folded[idx] = !w.folded[idx];
+                    // Unfolding 我的文档 cascades its rows back in.
+                    if idx == 1 { w.folder_drag.reset(); }
                     cx.notify();
                 })),
         )
@@ -506,6 +508,8 @@ impl Workspace {
         let record = self.more_bounds.clone();
         let lookup = self.more_bounds.clone();
         let open = self.row_menu.as_ref().is_some_and(|m| m.id == e.id && m.pos.x < px(0.));
+        // 我的文档 rows fade their buttons in with the hover wash.
+        let reveal = (key == "doc").then(|| self.folder_drag.reveal(&e.id));
         div()
             .id(SharedString::from(format!("more-{slot}")))
             .relative()
@@ -516,7 +520,7 @@ impl Workspace {
             .items_center()
             .justify_center()
             .rounded(px(6.))
-            .when(!open, |d| d.opacity(0.).group_hover("doc-row", |s| s.opacity(1.)))
+            .when(!open, |d| match reveal { Some(a) => d.opacity(a), None => d.opacity(0.).group_hover("doc-row", |s| s.opacity(1.)) })
             .when(open, |d| d.bg(Theme::sidebar_selected()))
             .hover(|s| s.bg(Theme::sidebar_selected()))
             .child(icon("ellipsis", 15., Theme::icon()))
@@ -543,8 +547,7 @@ impl Workspace {
             .p(px(3.))
             .flex_none()
             .rounded(px(6.))
-            .opacity(0.)
-            .group_hover("doc-row", |s| s.opacity(1.))
+            .opacity(self.folder_drag.reveal(&e.id))
             .hover(|s| s.bg(Theme::sidebar_selected()))
             .child(icon(if folder { "folder-plus" } else { "plus" }, 16., Theme::icon()))
             .tip(crate::settings::tr(if folder { "新建文件夹" } else { "新建文档" }, if folder { "New folder" } else { "New document" }), None)
@@ -602,8 +605,9 @@ impl Workspace {
             .w_full()
             .flex()
             .items_center()
-            .when(selected || checked, |d| d.bg(Theme::sidebar_selected()))
-            .when(!selected && !checked && !drop_target, |d| d.hover(|s| s.bg(Theme::sidebar_hover())))
+            // In 我的文档 the selection pill and the hover wash are drawn under the row (`sidebar_drag.rs`).
+            .when(checked || (selected && key != "doc"), |d| d.bg(Theme::sidebar_selected()))
+            .when(!selected && !checked && !drop_target && key != "doc", |d| d.hover(|s| s.bg(Theme::sidebar_hover())))
             .pl(px(6. + 18. * depth as f32))
             .when(batch.is_some(), |d| {
                 d.child(
@@ -621,7 +625,11 @@ impl Workspace {
             })
             .child({
                 div().size(px(20.)).flex_none().flex().items_center().justify_center().map(|d| match &e.icon {
-                    _ if folder => d.child(icon(if drop_target { "folder-input" } else if self.expanded.contains(&e.id) { "folder-open" } else { "folder" }, ROW_ICON, Theme::icon())),
+                    _ if folder => {
+                        let s = if key == "doc" { self.folder_drag.pop(&e.id) } else { 1. };
+                        d.child(icon(if drop_target { "folder-input" } else if self.expanded.contains(&e.id) { "folder-open" } else { "folder" }, ROW_ICON, Theme::icon())
+                            .with_transformation(Transformation::scale(size(s, s))))
+                    }
                     Some(em) => d.text_size(px(13.)).line_height(px(20.)).child(em.clone()),
                     None => d.child(icon("doc", ROW_ICON, Theme::icon())),
                 })
