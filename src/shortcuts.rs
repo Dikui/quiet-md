@@ -20,11 +20,13 @@ pub fn init(cx: &mut App) {
     rebuild(cx);
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(test, target_os = "windows"))]
 fn windows_binding(binding: KeyBinding) -> Option<KeyBinding> {
     let keys = binding.keystrokes().iter().map(|k| k.unparse().replace("win-", "cmd-")).collect::<Vec<_>>().join(" ");
     // Cocoa's control-key navigation conflicts with Windows editing shortcuts.
     if matches!(keys.as_str(), "ctrl-a" | "ctrl-b" | "ctrl-d" | "ctrl-e" | "ctrl-f" | "ctrl-h" | "ctrl-n" | "ctrl-p" | "ctrl-backspace") { return None; }
+    // Ctrl+Backspace deletes a word on Windows; do not override it with macOS line deletion.
+    if keys == "cmd-backspace" { return None; }
     let keys = if binding.action().name().ends_with("::InlineCode") { "ctrl-shift-c".to_string() } else { keys.split(' ').map(|key| match key {
         "cmd-left" => "home".into(), "cmd-right" => "end".into(),
         "cmd-shift-left" => "shift-home".into(), "cmd-shift-right" => "shift-end".into(),
@@ -36,10 +38,23 @@ fn windows_binding(binding: KeyBinding) -> Option<KeyBinding> {
     KeyBinding::load(&keys, binding.action().boxed_clone(), binding.predicate(), false, binding.action_input(), &DummyKeyboardMapper).ok()
 }
 
-#[cfg(all(test, target_os = "windows"))]
+#[cfg(test)]
 mod tests {
     use super::windows_binding;
     use gpui::KeyBinding;
+    #[test]
+    fn windows_word_deletion_has_no_line_deletion_collision() {
+        use crate::editor::keymap::{DeleteWordBack, DeleteWordForward, DeleteToLineStart, Backspace};
+        for (binding, expected) in [
+            (KeyBinding::new("alt-backspace", DeleteWordBack, Some("Editor")), "ctrl-backspace"),
+            (KeyBinding::new("alt-delete", DeleteWordForward, Some("Editor")), "ctrl-delete"),
+        ] {
+            let mapped = windows_binding(binding).unwrap();
+            assert_eq!(mapped.keystrokes()[0].unparse(), expected);
+        }
+        assert!(windows_binding(KeyBinding::new("cmd-backspace", DeleteToLineStart, Some("Editor"))).is_none());
+        assert!(windows_binding(KeyBinding::new("ctrl-backspace", Backspace, Some("Editor"))).is_none());
+    }
     #[test]
     fn copy_and_inline_code_keep_distinct_windows_shortcuts() {
         use crate::editor::keymap::{Copy, InlineCode};
