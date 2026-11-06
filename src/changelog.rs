@@ -15,6 +15,13 @@ const RADIUS: f32 = 12.;
 /// Each version's notes: (version, [(中文, English)]). Only the running
 /// version's are shown; a version without notes shows nothing.
 const NOTES: &[(&str, &[(&str, &str)])] = &[
+    ("0.1.6", &[
+        ("点击空白或切回窗口后可以继续输入，回到应用时更流畅", "Keep typing after clicking blank space or returning to a window; faster library refresh"),
+        ("宽表格可延伸至页边，竖向滚动不再带动表格横移", "Wide tables use the page margins and stay still during vertical scrolling"),
+        ("持续输入时也会及时保存，输入时隐藏块手柄", "Save regularly during continuous typing and hide block handles while writing"),
+        ("macOS：全局快速笔记默认快捷键改为 ⌥ Space", "macOS: the default global quick-note shortcut is now Option+Space"),
+        ("Windows：支持粘贴截图和图片文件、导出 PDF 和打印，修复按词删除", "Windows: paste screenshots and image files, export PDF and print, and delete words correctly"),
+    ]),
     ("0.1.5", &[
         ("应用更名为 Quiet.md", "The app is now called Quiet.md"),
         ("首页新增批量管理：创建副本、移动、删除", "Manage several documents at once from Home: duplicate, move, delete"),
