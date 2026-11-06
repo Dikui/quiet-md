@@ -102,12 +102,12 @@ A 120 Hz display gives each frame 8.3 ms. Even at P95 on a million-character doc
 Thanks to everyone who has helped build Quiet.md. Issues and pull requests are welcome: building, testing and code conventions are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 <p>
-  <a href="https://github.com/s1dashu"><img src="https://github.com/s1dashu.png?size=80" width="48" height="48" alt="s1dashu" title="s1dashu"></a>
-  <a href="https://github.com/jimuzhe"><img src="https://github.com/jimuzhe.png?size=80" width="48" height="48" alt="jimuzhe" title="jimuzhe"></a>
-  <a href="https://github.com/chinayuren2022-2025"><img src="https://github.com/chinayuren2022-2025.png?size=80" width="48" height="48" alt="chinayuren2022-2025" title="chinayuren2022-2025"></a>
+  <a href="https://github.com/s1dashu"><img src="docs/images/contributors/s1dashu.svg" width="48" height="48" alt="s1dashu" title="s1dashu"></a>
+  <a href="https://github.com/jimuzhe"><img src="docs/images/contributors/jimuzhe.svg" width="48" height="48" alt="jimuzhe" title="jimuzhe"></a>
+  <a href="https://github.com/chinayuren2022-2025"><img src="docs/images/contributors/chinayuren2022-2025.svg" width="48" height="48" alt="chinayuren2022-2025" title="chinayuren2022-2025"></a>
+  <a href="https://github.com/anthropics/claude-code"><img src="docs/images/contributors/anthropics.svg" width="48" height="48" alt="Claude Code (AI agent)" title="Claude Code (AI agent)"></a>
+  <a href="https://github.com/openai/codex"><img src="docs/images/contributors/openai.svg" width="48" height="48" alt="Codex (AI agent)" title="Codex (AI agent)"></a>
 </p>
-
-AI agents helping maintain Quiet.md: **Claude Code** · **Codex**.
 
 ## Recent updates
 
