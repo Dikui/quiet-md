@@ -39,6 +39,8 @@
 > [!NOTE]
 > Quiet.md 目前是 **Beta 版本**，还在快速迭代。遇到 bug 或有想法，欢迎[提 issue](https://github.com/s1dashu/quiet-md/issues)，更欢迎直接提 PR，一起把它打磨好。
 
+Linux 支持目前处于实验阶段，需要从源码构建；参见 [Linux 构建说明与验证范围](CONTRIBUTING.md#linux-experimental)。
+
 ## 为什么是 Quiet.md
 
 **⚡ 快，原生的那种快。** 整个界面由 Rust 和 [GPUI](https://www.gpui.rs/) 直接用 GPU 绘制，没有 WebView、没有 Electron。百万字文档实测中，输入、删除和滚动的帧处理 P95 均低于 6 ms。

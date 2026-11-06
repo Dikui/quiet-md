@@ -39,6 +39,8 @@
 > [!NOTE]
 > Quiet.md is in **beta** and changing quickly. If you hit a bug or have an idea, please [open an issue](https://github.com/s1dashu/quiet-md/issues) — or better, send a pull request.
 
+Linux support is experimental and currently built from source; see the [Linux instructions and validation limits](CONTRIBUTING.md#linux-experimental).
+
 ## Why Quiet.md
 
 **⚡ Fast, the native kind of fast.** The whole interface is drawn on the GPU by Rust and [GPUI](https://www.gpui.rs/). No WebView, no Electron. In a one-million-character document, typing, deleting and scrolling all stay under 6 ms per frame at P95.
