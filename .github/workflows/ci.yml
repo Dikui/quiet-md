@@ -78,7 +78,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Windows checks failed' }
 
   linux-build:
-    name: Linux x64 build
+    name: Linux x64 build + checks
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -87,7 +87,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libfontconfig1-dev libfreetype6-dev libwayland-dev libx11-xcb-dev libvulkan-dev
+          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libfontconfig1-dev libfreetype6-dev libwayland-dev libx11-xcb-dev libvulkan-dev libssl-dev python3 imagemagick fonts-noto-core fonts-noto-cjk
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -95,3 +95,9 @@ jobs:
 
       - name: Build application
         run: cargo build --release --locked
+
+      - name: Install clippy
+        run: rustup component add clippy
+
+      - name: Tests, bundled guides and clippy
+        run: python3 scripts/check.py
