@@ -432,7 +432,7 @@ impl R<'_> {
             BlockKind::Countdown(c) => self.countdown(b, c, cx),
             BlockKind::File(f) => self.file(b, f, env, cx),
             BlockKind::Table(t) if self.ghost => self.ghost_table(b, t, cx),
-            BlockKind::Table(t) => self.table(b, t, cx),
+            BlockKind::Table(t) => self.table(b, t, env.root, cx),
             BlockKind::Grid => self.grid(b, env, cx),
             BlockKind::Column { .. } => self.blocks(&b.children, env, cx).into_any_element(),
             BlockKind::Raw { tag, .. } => div()
@@ -1750,7 +1750,7 @@ pub(super) fn block_feishu(&self, b: &Block, siblings: &[Block], idx: usize, env
             BlockKind::Countdown(c) => self.countdown(b, c, cx),
             BlockKind::File(f) => self.file(b, f, env, cx),
             BlockKind::Table(t) if self.ghost => self.ghost_table(b, t, cx),
-            BlockKind::Table(t) => self.table(b, t, cx),
+            BlockKind::Table(t) => self.table(b, t, env.root, cx),
             BlockKind::Grid => self.grid(b, env, cx),
             BlockKind::Column { .. } => self.blocks(&b.children, env, cx).into_any_element(),
             BlockKind::Raw { tag, .. } => div()

@@ -472,7 +472,7 @@ impl Element for Sticky {
 }
 
 impl R<'_> {
-    pub(super) fn table(&self, b: &Block, t: &Table, cx: &mut Context<Editor>) -> AnyElement {
+    pub(super) fn table(&self, b: &Block, t: &Table, root: bool, cx: &mut Context<Editor>) -> AnyElement {
         let ed = self.ed;
         let id = b.id;
         let env = Env { depth: 0, cell: true, color: None, in_callout: false, root: false, column: false, quote: false, width: 0. };
@@ -758,7 +758,10 @@ impl R<'_> {
 
         // The scroller's padding leaves room for the bars and pins (its clip
         // would cut them off); negative margins keep the block's bounds on
-        // the table itself.
+        // the table itself. A page-level table may also use the side margins
+        // (Feishu): it starts at the text column, runs on to the right one,
+        // and scrolling sideways slides it over the left one.
+        let (bl, br) = if root { ed.bleed() } else { (0., 0.) };
         div()
             .flex()
             .child(
@@ -766,11 +769,11 @@ impl R<'_> {
                     .id(("table", id.0))
                     .flex_1()
                     .min_w_0()
-                    .ml(px(-26.))
+                    .ml(px(-26. - bl))
                     .mt(px(-26.))
-                    .pl(px(16.))
+                    .pl(px(16. + bl))
                     .pt(px(16.))
-                    .mr(px(-12.))
+                    .mr(px(-12. - br))
                     .pr(px(12.))
                     .mb(px(-12.))
                     .pb(px(12.))
