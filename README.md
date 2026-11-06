@@ -99,6 +99,11 @@ A 120 Hz display gives each frame 8.3 ms. Even at P95 on a million-character doc
 
 ## Recent updates
 
+- **0.1.5** (Nov 5): the app is now called Quiet.md; your library and notes stay where they were.
+  - Manage several documents at once from Home: duplicate, move or delete them together.
+  - Empty the Trash in one step; arrow keys move through the insert menu's icons; deleting every document no longer creates an empty one.
+  - After an in-app update, the sidebar shows once what changed in the new version.
+  - Windows: shortcuts and the built-in guide read Ctrl / Alt, and a failed launch explains itself and leaves a log.
 - **0.1.4** (Nov 5):
   - In-app updates: when a new version is out, an **Update** button appears at the top of the sidebar. The download is verified against its signature, and a restart finishes the install; open documents are saved first. Automatic checks can be turned off in **Settings › General**. A check only fetches a version manifest and sends no data. Version 0.1.3 and earlier need a one-time manual download of 0.1.4.
   - Dark mode: choose System, Light or Dark in **Settings › Appearance**. Built-in and custom themes all have a dark look; export and printing stay light.
