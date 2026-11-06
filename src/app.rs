@@ -1238,6 +1238,9 @@ pub(crate) const HEADER_ACTIONS_H: f32 = 32.;
 
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Clicks no longer take focus from the editor (see the root's mouse
+        // down), so leaving the document hands it back to the window's keys.
+        if self.view != View::Doc && self.editor.as_ref().is_some_and(|e| e.read(cx).focus.is_focused(window)) { window.focus(&self.focus); }
         self.native_sidebar.sync(if self.sidebar_open { self.sidebar_w(window) } else { 0. }, window);
         let sidebar = if self.sidebar_open { Some(if matches!(self.view, View::Settings | View::Trash) { self.render_settings_sidebar(window, cx) } else { self.render_sidebar(window, cx) }) } else { None };
         let row_menu = self.render_row_menu(window, cx);
@@ -1293,6 +1296,13 @@ impl Render for Workspace {
             .id("workspace")
             .key_context("Workspace")
             .track_focus(&self.focus)
+            // A click on what takes no input (title bar, page margins, the
+            // sidebar's blank space) leaves the caret in the document, also
+            // the click that brings the window back (#59). Runs before the
+            // root takes focus; anything inside that takes focus did so first.
+            .on_mouse_down(MouseButton::Left, cx.listener(|w, _, window, cx| {
+                if w.view == View::Doc && w.editor.as_ref().is_some_and(|e| e.read(cx).focus.is_focused(window)) { window.prevent_default(); }
+            }))
             .relative()
             .size_full()
             .flex()
