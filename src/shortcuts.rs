@@ -7,7 +7,7 @@ pub struct Shortcuts { base: Vec<KeyBinding>, custom: BTreeMap<String, String> }
 impl Global for Shortcuts {}
 fn path() -> std::path::PathBuf { crate::store::Store::root_dir().join("shortcuts.json") }
 /// The system-wide quick note hotkey unless the user picked another.
-pub const GLOBAL_DEFAULT: &str = "cmd-space";
+pub const GLOBAL_DEFAULT: &str = "alt-space";
 pub fn global_key() -> String {
     std::fs::read(path()).ok().and_then(|b| serde_json::from_slice::<BTreeMap<String,String>>(&b).ok()).and_then(|m| m.get("global").cloned()).unwrap_or_else(|| GLOBAL_DEFAULT.into())
 }
