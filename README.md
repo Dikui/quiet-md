@@ -29,7 +29,7 @@
   <a href="#download"><b>Download</b></a> ·
   <a href="#performance">Performance</a> ·
   <a href="#features">Features</a> ·
-  <a href="#contributing">Contributing</a>
+  <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
 <p align="center">
@@ -108,27 +108,11 @@ A 120 Hz display gives each frame 8.3 ms. Even at P95 on a million-character doc
 
 Full notes for each version are on [Releases](https://github.com/s1dashu/quiet-md/releases).
 
-## Where your files live
+## Contributors
 
-By default, `~/Documents/Quiet.md` (on Windows, `Quiet.md` inside your Documents folder). Each note is an XML file in `docs/`; images and attachments are in `assets/`.
+Thanks to everyone who has helped build Quiet.md. Issues and pull requests are welcome: building, testing and code conventions are in [CONTRIBUTING.md](CONTRIBUTING.md) (written in Chinese for now).
 
-For the folder layout and format details, see [docs/FORMAT.md](docs/FORMAT.md).
-
-## Contributing
-
-Quiet.md is still in beta and there is plenty to do: fixing bugs, adding features, supporting more platforms. Issues and pull requests are welcome.
-
-Quick start from source (Rust toolchain is pinned in `rust-toolchain.toml`; macOS needs the Xcode Command Line Tools, Windows needs the Visual Studio 2022 C++ Build Tools and the Windows SDK):
-
-```sh
-cargo build --release --locked
-QUIET_MD_HOME=/tmp/quiet-md-dev ./target/release/quiet_md   # use a scratch library, not your real one
-scripts/check.sh                                            # tests + clippy with zero warnings
-```
-
-The repository is a Cargo workspace: `crates/core` (`fdl_core`) is the document engine — model, DocxXML, editing core and undo, library storage, import and export — and does not depend on GPUI. The root crate is the GPUI app. GPUI and taffy are patched copies in `vendor/` (see [vendor/PATCHES.md](vendor/PATCHES.md)).
-
-Building, testing and packaging are covered in [CONTRIBUTING.md](CONTRIBUTING.md), the code structure in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and code conventions in [AGENTS.md](AGENTS.md). These developer docs are currently written in Chinese.
+[![Contributors](https://contrib.rocks/image?repo=s1dashu/quiet-md)](https://github.com/s1dashu/quiet-md/graphs/contributors)
 
 ## License
 

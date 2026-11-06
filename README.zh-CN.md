@@ -106,17 +106,11 @@
 
 每个版本的完整说明见 [Releases](https://github.com/s1dashu/quiet-md/releases)。
 
-## 你的文件在哪
+## 贡献者
 
-默认在 `~/Documents/Quiet.md`（Windows 是「文档」下的 `Quiet.md`）。每篇笔记是 `docs/` 里的一份 XML，图片和附件在 `assets/`。
+感谢每一位参与 Quiet.md 的人。欢迎提 issue 和 PR，构建、测试和代码约定见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-目录结构和格式细节见 [docs/FORMAT.md](docs/FORMAT.md)。
-
-## 参与开发
-
-Quiet.md 还在 Beta，有很多可以一起做的事：修 bug、补功能、适配更多平台。欢迎提 issue 和 PR。
-
-从源码构建、测试和打包见 [CONTRIBUTING.md](CONTRIBUTING.md)，代码结构见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+[![Contributors](https://contrib.rocks/image?repo=s1dashu/quiet-md)](https://github.com/s1dashu/quiet-md/graphs/contributors)
 
 ## 许可
 
