@@ -766,23 +766,50 @@ impl R<'_> {
         // more to bleed into, the clip sits on the page margin.
         let (bl, br) = if root { ed.bleed() } else { (0., 0.) };
         let (reach, reach_r) = (bl.max(26.), br.max(12.));
+        // Where the cells are drawn this frame (scroll included): a side the
+        // clip cuts gets a closing line and a shade inward, as in Feishu
+        // (measured there: a border-coloured line, then black 5% → 0 over 10px).
+        let cells_at = Rc::new(Cell::new(None::<Bounds<Pixels>>));
+        let c = cells_at.clone();
+        grid = grid.child(canvas(move |b, _, _| c.set(Some(b)), |_, _, _, _| {}).absolute().left(px(BAR)).top(px(BAR)).right_0().bottom_0());
+        let edges = canvas(|_, _, _| (), move |b, _, window, _| {
+            let Some(t) = cells_at.get() else { return };
+            let (top, bottom) = (t.top().max(b.top()), t.bottom().min(b.bottom()));
+            if bottom <= top { return }
+            let h = bottom - top;
+            let shade = |deg| linear_gradient(deg, linear_color_stop(theme::rgbaf(0, 0, 0, 0.05), 0.), linear_color_stop(theme::rgbaf(0, 0, 0, 0.), 1.));
+            if t.left() < b.left() - px(0.5) {
+                window.paint_quad(fill(Bounds::new(point(b.left() + px(1.), top), size(px(10.), h)), shade(90.)));
+                window.paint_quad(fill(Bounds::new(point(b.left(), top), size(px(1.), h)), Theme::table_line()));
+            }
+            if t.right() > b.right() + px(0.5) {
+                window.paint_quad(fill(Bounds::new(point(b.right() - px(11.), top), size(px(10.), h)), shade(270.)));
+                window.paint_quad(fill(Bounds::new(point(b.right() - px(1.), top), size(px(1.), h)), Theme::table_line()));
+            }
+        });
         div()
             .flex()
             .child(
                 div()
-                    .id(("table", id.0))
+                    .relative()
                     .flex_1()
                     .min_w_0()
                     .ml(px(-reach))
                     .mt(px(-26.))
-                    .pl(px(reach - BAR))
-                    .pt(px(16.))
                     .mr(px(-reach_r))
-                    .pr(px(reach_r - br))
                     .mb(px(-12.))
-                    .pb(px(12.))
-                    .overflow_x_scroll()
-                    .child(grid),
+                    .child(
+                        div()
+                            .id(("table", id.0))
+                            .w_full()
+                            .pl(px(reach - BAR))
+                            .pt(px(16.))
+                            .pr(px(reach_r - br))
+                            .pb(px(12.))
+                            .overflow_x_scroll()
+                            .child(grid),
+                    )
+                    .child(edges.absolute().top_0().left_0().size_full()),
             )
             .into_any_element()
     }
