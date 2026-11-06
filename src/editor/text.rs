@@ -667,11 +667,12 @@ pub fn build_runs(
             if m.code && !spec.mono {
                 font.weight = if m.bold { bold_weight() } else { FontWeight::NORMAL };
             }
+            let background_color = m.bg_color.as_ref().and_then(|c| theme::bg_color(&c.0)).map(|c| if spec.dim_marks { c.opacity(0.7) } else { c });
             runs.push(TextRun {
                 len: b - a,
                 font,
-                color,
-                background_color: m.bg_color.as_ref().and_then(|c| theme::bg_color(&c.0)).map(|c| if spec.dim_marks { c.opacity(0.7) } else { c }),
+                color: if background_color.is_some() { crate::theme::on_mark(color) } else { color },
+                background_color,
                 underline,
                 // Painted by `RichTextElement::paint`, see `paint_strikes`.
                 strikethrough: None,
