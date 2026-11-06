@@ -101,7 +101,13 @@ A 120 Hz display gives each frame 8.3 ms. Even at P95 on a million-character doc
 
 Thanks to everyone who has helped build Quiet.md. Issues and pull requests are welcome: building, testing and code conventions are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-[![Contributors](https://contrib.rocks/image?repo=s1dashu/quiet-md)](https://github.com/s1dashu/quiet-md/graphs/contributors)
+<p>
+  <a href="https://github.com/s1dashu"><img src="https://github.com/s1dashu.png?size=80" width="48" height="48" alt="s1dashu" title="s1dashu"></a>
+  <a href="https://github.com/jimuzhe"><img src="https://github.com/jimuzhe.png?size=80" width="48" height="48" alt="jimuzhe" title="jimuzhe"></a>
+  <a href="https://github.com/chinayuren2022-2025"><img src="https://github.com/chinayuren2022-2025.png?size=80" width="48" height="48" alt="chinayuren2022-2025" title="chinayuren2022-2025"></a>
+</p>
+
+AI agents helping maintain Quiet.md: **Claude Code** · **Codex**.
 
 ## Recent updates
 
