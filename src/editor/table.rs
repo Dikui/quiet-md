@@ -761,7 +761,9 @@ impl R<'_> {
         // the table itself. A page-level table may also use the side margins
         // (Feishu): it starts at the text column, runs on to the right one,
         // and scrolling sideways slides it over the left one.
+        // The left reach also holds the row-insert pin (L−25.5): 26 at least.
         let (bl, br) = if root { ed.bleed() } else { (0., 0.) };
+        let reach = bl.max(26.);
         div()
             .flex()
             .child(
@@ -769,9 +771,9 @@ impl R<'_> {
                     .id(("table", id.0))
                     .flex_1()
                     .min_w_0()
-                    .ml(px(-26. - bl))
+                    .ml(px(-reach))
                     .mt(px(-26.))
-                    .pl(px(16. + bl))
+                    .pl(px(reach - BAR))
                     .pt(px(16.))
                     .mr(px(-12. - br))
                     .pr(px(12.))
