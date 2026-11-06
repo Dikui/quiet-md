@@ -77,7 +77,10 @@ async function groups(env, from, to) {
     body: JSON.stringify({ query: QUERY, variables: { zone: env.ZONE_ID, from: from.toISOString(), to: to.toISOString(), limit: PAGE } }),
   });
   const body = await res.json();
-  if (!res.ok || body.errors) throw new Error(`graphql ${res.status}: ${JSON.stringify(body.errors || body).slice(0, 500)}`);
+  if (!res.ok || body.errors) {
+    const t = String(env.CF_API_TOKEN || '').trim(); // its shape only, never the token
+    throw new Error(`graphql ${res.status} (token: ${t.length} chars${t ? `, starts ${t.slice(0, 5)}` : ''}): ${JSON.stringify(body.errors || body).slice(0, 500)}`);
+  }
   const list = body.data.viewer.zones[0].httpRequestsAdaptiveGroups;
   // A full page may have been cut short: split the window and ask again.
   if (list.length < PAGE || to - from <= 3600e3) return list;
