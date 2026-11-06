@@ -14,6 +14,9 @@ Every number is a row of `metrics`: `(day, metric, dims, value, source)`, `day` 
 | `update.check_requests` | raw manifest requests | platform |
 | `github.downloads_total` | GitHub's download counter when collected | platform, version, asset |
 | `github.downloads` | the counter's increase since the previous day's snapshot | platform, version |
+| `github.stars`, `github.forks`, `github.watchers`, `github.open_issues` | the repository's counts when collected (open issues include PRs) | none |
+| `site.visitors` | distinct IPs that loaded quiet.md's home page, crawlers left out | country |
+| `site.pageviews` | home page loads, crawlers left out | none |
 
 `channel` is `update` for the in-app updater (curl fetching the versioned `v<x.y.z>/` package its manifest names) and `cdn` for everything else on download.quiet.md: the site, the README and release-note links opened in a browser. The free plan's analytics have no query string or referer, so those links are not told apart.
 

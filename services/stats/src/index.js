@@ -8,16 +8,21 @@
 //     cdn.download_requests  raw GET requests, for comparison  {platform, version, channel, status}
 //     update.checks          distinct IPs fetching an update manifest  {platform, country}
 //     update.check_requests  raw manifest requests     {platform}
-//   github      release assets (GitHub keeps only a running total)
-//     github.downloads_total the counter at collection time  {platform, version, asset}
-//     github.downloads       the increase since the previous snapshot  {platform, version}
+//   site        quiet.md's home page (same analytics, same 31 days)
+//     site.visitors          distinct IPs that loaded the page, crawlers left out  {country}
+//     site.pageviews         page loads, crawlers left out  {}
+//   github      the repository (GitHub keeps only running totals)
+//     github.downloads_total release asset counters at collection time  {platform, version, asset}
+//     github.downloads       their increase since the previous snapshot  {platform, version}
+//     github.stars, github.forks, github.watchers, github.open_issues (issues and PRs)  {}
 //
 // channel: "update" is the in-app updater (curl fetching a versioned v<x.y.z>/ package,
 // the URL its manifest names); "cdn" is everything else on download.quiet.md, i.e. the
 // site, the README and release-note links opened in a browser. The free plan's analytics
 // have no query string or referer, so the site and the README are not told apart here.
 
-const HOST = 'download.quiet.md';
+const HOST = 'download.quiet.md', SITE = 'quiet.md';
+const CRAWLER = /bot|crawl|spider|slurp|curl|wget|python|go-http|java\/|headless|preview|monitor|scan/i;
 const PLATFORMS = { 'macos-arm64.zip': 'macos-arm64', 'windows-x64-setup.exe': 'windows-x64' };
 const PAGE = 10000; // httpRequestsAdaptiveGroups' largest page
 
@@ -31,12 +36,14 @@ export async function collect(env, now = new Date()) {
   const yesterday = dayOf(new Date(now.getTime() - 86400e3));
   // Cloudflare: every day since the last good run, oldest first, at most MAX_DAYS per run
   // (the analytics only reach 30 days back; a gap older than that is lost).
-  const last = await env.DB.prepare("SELECT max(day) AS d FROM runs WHERE source = 'cloudflare' AND error IS NULL").first('d');
   const oldest = dayOf(new Date(now.getTime() - 30 * 86400e3));
-  let day = last ? next(last) : oldest;
-  if (day < oldest) day = oldest;
-  for (let n = 0; day <= yesterday && n < Number(env.MAX_DAYS || 3); day = next(day), n++) {
-    await run(env, 'cloudflare', day, () => cloudflare(env, day));
+  for (const [source, f] of [['cloudflare', cloudflare], ['site', site]]) {
+    const last = await env.DB.prepare('SELECT max(day) AS d FROM runs WHERE source = ? AND error IS NULL').bind(source).first('d');
+    let day = last ? next(last) : oldest;
+    if (day < oldest) day = oldest;
+    for (let n = 0; day <= yesterday && n < Number(env.MAX_DAYS || 3); day = next(day), n++) {
+      await run(env, source, day, () => f(env, day));
+    }
   }
   // GitHub: one snapshot per day, filed under yesterday (the run is just after midnight UTC).
   await run(env, 'github', yesterday, () => github(env, yesterday));
@@ -65,16 +72,17 @@ export function classify(path, userAgent) {
   return null;
 }
 
-const QUERY = `query($zone: String!, $from: Time!, $to: Time!, $limit: Int!) { viewer { zones(filter: {zoneTag: $zone}) {
-  httpRequestsAdaptiveGroups(limit: $limit, filter: {datetime_geq: $from, datetime_lt: $to, clientRequestHTTPHost: "${HOST}",
-    clientRequestHTTPMethodName: "GET", edgeResponseStatus_in: [200, 206, 304]}) {
+const QUERY = (filter) => `query($zone: String!, $from: Time!, $to: Time!, $limit: Int!) { viewer { zones(filter: {zoneTag: $zone}) {
+  httpRequestsAdaptiveGroups(limit: $limit, filter: {datetime_geq: $from, datetime_lt: $to, clientRequestHTTPMethodName: "GET", ${filter}}) {
     count dimensions { clientIP clientRequestPath userAgent clientCountryName edgeResponseStatus } } } } }`;
+const DOWNLOADS = `clientRequestHTTPHost: "${HOST}", edgeResponseStatus_in: [200, 206, 304]`;
+const HOME = `clientRequestHTTPHost: "${SITE}", clientRequestPath: "/", edgeResponseStatus: 200`;
 
-async function groups(env, from, to) {
+async function groups(env, from, to, filter = DOWNLOADS) {
   const res = await fetch('https://api.cloudflare.com/client/v4/graphql', {
     method: 'POST',
     headers: { authorization: `Bearer ${String(env.CF_API_TOKEN || '').trim()}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ query: QUERY, variables: { zone: env.ZONE_ID, from: from.toISOString(), to: to.toISOString(), limit: PAGE } }),
+    body: JSON.stringify({ query: QUERY(filter), variables: { zone: env.ZONE_ID, from: from.toISOString(), to: to.toISOString(), limit: PAGE } }),
   });
   const body = await res.json();
   if (!res.ok || body.errors) {
@@ -85,7 +93,7 @@ async function groups(env, from, to) {
   // A full page may have been cut short: split the window and ask again.
   if (list.length < PAGE || to - from <= 3600e3) return list;
   const mid = new Date((from.getTime() + to.getTime()) / 2);
-  return [...(await groups(env, from, mid)), ...(await groups(env, mid, to))];
+  return [...(await groups(env, from, mid, filter)), ...(await groups(env, mid, to, filter))];
 }
 
 async function cloudflare(env, day) {
@@ -118,12 +126,33 @@ async function cloudflare(env, day) {
   return replace(env, day, 'cloudflare', rows);
 }
 
+async function site(env, day) {
+  const from = new Date(`${day}T00:00:00Z`);
+  const list = await groups(env, from, new Date(from.getTime() + 86400e3), HOME);
+  const ips = new Map();
+  let views = 0;
+  for (const { count, dimensions: d } of list) {
+    if (CRAWLER.test(d.userAgent || '') || !/mozilla/i.test(d.userAgent || '')) continue;
+    views += count;
+    const k = key({ country: d.clientCountryName || 'XX' });
+    if (!ips.has(k)) ips.set(k, new Set());
+    ips.get(k).add(d.clientIP);
+  }
+  const rows = [['site.pageviews', '{}', views]];
+  for (const [k, s] of ips) rows.push(['site.visitors', k, s.size]);
+  return replace(env, day, 'site', rows);
+}
+
 // ---- GitHub ----
 
 async function github(env, day) {
   const headers = { 'user-agent': 'quiet-md-stats', accept: 'application/vnd.github+json' };
   if (env.GITHUB_TOKEN) headers.authorization = `Bearer ${env.GITHUB_TOKEN}`;
-  const rows = [];
+  const repo = await fetch(`https://api.github.com/repos/${env.GITHUB_REPO}`, { headers });
+  if (!repo.ok) throw new Error(`github ${repo.status}: ${(await repo.text()).slice(0, 300)}`);
+  const r0 = await repo.json();
+  const rows = [['github.stars', '{}', r0.stargazers_count], ['github.forks', '{}', r0.forks_count],
+    ['github.watchers', '{}', r0.subscribers_count], ['github.open_issues', '{}', r0.open_issues_count]];
   for (let page = 1; page < 10; page++) {
     const res = await fetch(`https://api.github.com/repos/${env.GITHUB_REPO}/releases?per_page=100&page=${page}`, { headers });
     if (!res.ok) throw new Error(`github ${res.status}: ${(await res.text()).slice(0, 300)}`);
@@ -141,7 +170,8 @@ async function github(env, day) {
     AND day = (SELECT max(day) FROM metrics WHERE metric = 'github.downloads_total' AND day < ?)`).bind(day).all();
   const before = new Map(prev.results.map((r) => [r.dims, r.value]));
   const delta = new Map();
-  for (const [, k, total] of rows) {
+  for (const [metric, k, total] of rows) {
+    if (metric !== 'github.downloads_total') continue;
     const d = JSON.parse(k);
     // A first snapshot has nothing to compare with; an asset new since then starts at 0.
     if (before.size === 0) continue;
