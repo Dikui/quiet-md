@@ -95,6 +95,12 @@
 - **快捷键**：按 `⌘ /`（Windows 上是 `Ctrl+/`）查看全部快捷键，每一个都能改。快捷键在 Windows 上用 Ctrl 代替 ⌘、Alt 代替 ⌥，应用里和「开始指南」里都按当前系统显示。
 - **主题**：内置 Craft、飞书、Notion、Obsidian 四套风格，也可以用 CSS 自己写，见 [docs/THEMES.md](docs/THEMES.md)。
 
+## 贡献者
+
+感谢每一位参与 Quiet.md 的人。欢迎提 issue 和 PR，构建、测试和代码约定见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+[![Contributors](https://contrib.rocks/image?repo=s1dashu/quiet-md)](https://github.com/s1dashu/quiet-md/graphs/contributors)
+
 ## 近期更新
 
 - **0.1.5**（11 月 5 日）：应用更名为 Quiet.md，文档库位置和已有内容不变。
@@ -110,12 +116,6 @@
 - **0.1.1**（11 月 3 日）：推出 Windows x64 版，按用户安装，卸载时保留笔记；同时完善中英文界面和内置指南。
 
 每个版本的完整说明见 [Releases](https://github.com/s1dashu/quiet-md/releases)。
-
-## 贡献者
-
-感谢每一位参与 Quiet.md 的人。欢迎提 issue 和 PR，构建、测试和代码约定见 [CONTRIBUTING.md](CONTRIBUTING.md)。
-
-[![Contributors](https://contrib.rocks/image?repo=s1dashu/quiet-md)](https://github.com/s1dashu/quiet-md/graphs/contributors)
 
 ## 许可
 
