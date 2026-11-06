@@ -181,6 +181,10 @@ pub struct Entry {
 
 pub struct Store {
     loaded: std::cell::RefCell<HashMap<String, String>>,
+    /// What `list` parsed from each file, kept while its mtime and size stay
+    /// the same: re-reading every document on each window activation stalled
+    /// the main thread for seconds on big or iCloud-evicted libraries.
+    parsed: HashMap<String, (std::time::SystemTime, u64, Parsed)>,
     root: PathBuf,
     index: HashMap<String, Meta>,
     trash: HashMap<String, Trashed>,
@@ -188,6 +192,10 @@ pub struct Store {
     /// from its backup …), for the window to tell the user once.
     pub warnings: Vec<String>,
 }
+
+/// The parts of an `Entry` that come from the document file.
+#[derive(Clone)]
+struct Parsed { title: String, icon: Option<String>, body: String, reminders: Vec<crate::model::InlineReminder>, links: Vec<crate::model::DocLink> }
 
 /// One write to the indexes: several copies of the app may share a library
 /// (builds tested side by side), so this is a short mutex, not a
@@ -311,7 +319,7 @@ impl Store {
         }
         let index = load_json(&root.join("index.json"), "文档索引", &mut warnings);
         let trash = load_json(&root.join("trash").join("index.json"), "回收站索引", &mut warnings);
-        Ok(Store { root, index, trash, warnings, loaded: Default::default() })
+        Ok(Store { root, index, trash, warnings, loaded: Default::default(), parsed: HashMap::new() })
     }
 
     fn path(&self, id: &str) -> PathBuf {
@@ -349,21 +357,33 @@ impl Store {
                 continue;
             }
             let Some(id) = p.file_stem().and_then(|s| s.to_str()).map(str::to_string) else { continue };
-            let Ok(xml) = std::fs::read_to_string(&p) else { continue };
-            let doc = docxml::parse(&xml).unwrap_or_default();
+            let md = e.metadata().ok();
+            let stamp = md.as_ref().and_then(|m| Some((m.modified().ok()?, m.len())));
+            let parsed = match self.parsed.get(&id).filter(|c| stamp == Some((c.0, c.1))) {
+                Some(c) => c.2.clone(),
+                None => {
+                    let Ok(xml) = std::fs::read_to_string(&p) else { continue };
+                    let doc = docxml::parse(&xml).unwrap_or_default();
+                    let parsed = Parsed { title: doc.title.text.clone(), icon: doc.icon.clone(), body: doc.plain_text(), reminders: doc.reminders(), links: doc.doc_links() };
+                    if let Some((t, len)) = stamp { self.parsed.insert(id.clone(), (t, len, parsed.clone())); }
+                    parsed
+                }
+            };
             let meta = self.index.entry(id.clone()).or_insert_with(|| {
                 dirty = true;
-                let m = e
-                    .metadata()
-                    .ok()
+                let m = md
+                    .as_ref()
                     .and_then(|m| m.modified().ok())
                     .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
                     .map(|d| d.as_secs())
                     .unwrap_or_else(now);
                 Meta { created: m, modified: m, ..Default::default() }
             });
-            out.push(Entry { id, meta: meta.clone(), title: doc.title.text.clone(), icon: doc.icon.clone(), body: doc.plain_text(), reminders: doc.reminders(), links: doc.doc_links() });
+            let Parsed { title, icon, body, reminders, links } = parsed;
+            out.push(Entry { id, meta: meta.clone(), title, icon, body, reminders, links });
         }
+        let seen: std::collections::HashSet<&str> = out.iter().map(|e| e.id.as_str()).collect();
+        self.parsed.retain(|id, _| seen.contains(id.as_str()));
         if dirty {
             let _ = self.save_index();
         }
@@ -734,6 +754,30 @@ mod tests {
     }
 
     #[test]
+    fn list_rereads_only_changed_files() {
+        let lib = Lib::new("listcache");
+        let mut s = lib.open();
+        let a = s.create_from(&doc("一")).unwrap();
+        let b = s.create_from(&doc("二")).unwrap();
+        assert_eq!(s.list().len(), 2);
+        // Another app edits b. a is unchanged on disk, so list keeps what it
+        // parsed before (marked here to tell it from a re-read).
+        std::fs::write(s.path(&b), docxml::serialize(&doc("二改"))).unwrap();
+        let ap = s.path(&a);
+        let stamp = std::fs::metadata(&ap).unwrap().modified().unwrap();
+        s.parsed.get_mut(&a).unwrap().2.title = "缓存".into();
+        assert_eq!(std::fs::metadata(&ap).unwrap().modified().unwrap(), stamp);
+        let titles = |s: &mut Store| { let mut t: Vec<_> = s.list().into_iter().map(|e| e.title).collect(); t.sort(); t };
+        assert_eq!(titles(&mut s), ["二改", "缓存"]);
+        // Saving through the store, or deleting the file, is seen too.
+        s.save(&a, &doc("一改")).unwrap();
+        assert_eq!(titles(&mut s), ["一改", "二改"]);
+        std::fs::remove_file(s.path(&b)).unwrap();
+        assert_eq!(titles(&mut s), ["一改"]);
+        assert_eq!(s.parsed.len(), 1);
+    }
+
+    #[test]
     fn corrupt_index_falls_back_to_backup() {
         let lib = Lib::new("corrupt");
         let mut s = lib.open();
@@ -804,7 +848,7 @@ mod tests {
         let index = std::fs::read(trash.join("index.json")).unwrap();
         std::fs::rename(&trash, lib.0.join("trash-away")).unwrap();
         std::fs::write(&trash, b"").unwrap();
-        let mut s = Store { root: lib.0.clone(), index: HashMap::new(), trash: serde_json::from_slice(&index).unwrap(), warnings: vec![], loaded: Default::default() };
+        let mut s = Store { root: lib.0.clone(), index: HashMap::new(), trash: serde_json::from_slice(&index).unwrap(), warnings: vec![], loaded: Default::default(), parsed: HashMap::new() };
         assert_eq!(s.list_trash().len(), 1);
         assert_eq!(s.trash.len(), 1);
     }
