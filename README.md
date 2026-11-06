@@ -105,6 +105,7 @@ Thanks to everyone who has helped build Quiet.md. Issues and pull requests are w
 
 ## Recent updates
 
+- **0.1.6** (Nov 6): smoother window switching and typing, wider tables, regular saves during continuous typing, and Option+Space for global quick notes on macOS. Windows adds image paste, PDF export and printing, with corrected word deletion.
 - **0.1.5** (Nov 5): the app is now called Quiet.md; your library and notes stay where they were.
   - Manage several documents at once from Home: duplicate, move or delete them together.
   - Empty the Trash in one step; arrow keys move through the insert menu's icons; deleting every document no longer creates an empty one.
