@@ -101,7 +101,7 @@
 
 Quiet.md の開発に協力してくださったすべての方に感謝します。issue とプルリクエストを歓迎します。ビルド、テスト、コードの規約については [CONTRIBUTING.md](CONTRIBUTING.md) をご覧ください。
 
-[![コントリビューター](https://contrib.rocks/image?repo=s1dashu/quiet-md)](https://github.com/s1dashu/quiet-md/graphs/contributors)
+[![コントリビューター](https://raw.githubusercontent.com/s1dashu/quiet-md/contributors-assets/docs/images/contributors.svg)](https://github.com/s1dashu/quiet-md/graphs/contributors)
 
 ## 最近の更新
 
