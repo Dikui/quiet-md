@@ -160,6 +160,7 @@ enum Error { Unsupported, Failed(String) }
 
 fn platform() -> Option<&'static str> {
     if cfg!(all(target_os = "macos", target_arch = "aarch64")) { Some("macos-arm64") }
+    else if cfg!(all(target_os = "macos", target_arch = "x86_64")) { Some("macos-x86_64") }
     else if cfg!(all(target_os = "windows", target_arch = "x86_64")) { Some("windows-x64") }
     else { None }
 }
@@ -407,6 +408,10 @@ FuE4L1zQnqL1nA/5xffpEtZyK2ca882Q1joA5X11poZ1xezdAlEMfn/36MJc5C60clQFec4vQf66MoxP
     fn manifests_must_name_the_signed_package() {
         let ok = manifest("0.2.0", "https://download.quiet.md/v0.2.0/quiet-md-0.2.0-macos-arm64.zip", "quiet-md-0.2.0-macos-arm64.zip");
         assert_eq!(validate(&ok, "macos-arm64", false), Ok(()));
+        assert!(validate(&ok, "macos-x86_64", false).is_err());
+        let intel = manifest("0.2.0", "https://download.quiet.md/v0.2.0/quiet-md-0.2.0-macos-x86_64.zip", "quiet-md-0.2.0-macos-x86_64.zip");
+        assert_eq!(validate(&intel, "macos-x86_64", false), Ok(()));
+        assert!(validate(&intel, "macos-arm64", false).is_err());
         // An older package's signature under a newer version number.
         let replay = manifest("0.9.0", "https://download.quiet.md/v0.2.0/quiet-md-0.2.0-macos-arm64.zip", "quiet-md-0.2.0-macos-arm64.zip");
         assert!(validate(&replay, "macos-arm64", false).is_err());
