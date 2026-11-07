@@ -32,6 +32,7 @@ jobs:
       - name: Publish changed avatars to the assets branch
         run: |
           cp docs/images/contributors.svg "$RUNNER_TEMP/contributors.svg"
+          git restore docs/images/contributors.svg
           if git ls-remote --exit-code --heads origin contributors-assets; then
             git fetch origin contributors-assets
             git checkout -B contributors-assets FETCH_HEAD
