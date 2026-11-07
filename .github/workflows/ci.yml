@@ -25,7 +25,7 @@ jobs:
     name: test + clippy
     # Exercise AppKit and Metal on macOS; Windows checks run separately.
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 90
     env:
       MACOSX_DEPLOYMENT_TARGET: "13.0"
     steps:
@@ -34,7 +34,9 @@ jobs:
       # rust-toolchain.toml pins the channel and asks for clippy; rustup
       # installs both here, so local and CI use the same compiler.
       - name: Install toolchain
-        run: rustup component add clippy
+        run: |
+          rustup component add clippy
+          rustup target add x86_64-apple-darwin
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -47,6 +49,34 @@ jobs:
 
       - name: Tests, bundled guides and clippy
         run: scripts/check.sh
+
+      # Both packages share this ARM runner; do not allocate a second Mac job.
+      # Ad-hoc CI packages are for validation, not public distribution.
+      - name: Package Apple Silicon
+        env:
+          SIGNING_IDENTITY: '-'
+        run: scripts/release.sh
+
+      - name: Cross-compile and package Intel
+        env:
+          SIGNING_IDENTITY: '-'
+          MACOS_TARGET: x86_64-apple-darwin
+        run: scripts/release.sh
+
+      - name: Test Intel update validation under Rosetta
+        run: |
+          sudo softwareupdate --install-rosetta --agree-to-license
+          cargo test --release --locked --target x86_64-apple-darwin --bin quiet_md update::tests
+
+      - name: Upload macOS validation packages
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: macos-validation-packages
+          path: |
+            dist-release.*/quiet-md-*-macos-*-unsigned.zip
+            dist-release.*/quiet-md-*-macos-*-unsigned.zip.sha256
+          if-no-files-found: error
+          retention-days: 7
 
   windows-build:
     name: Windows x64 build
