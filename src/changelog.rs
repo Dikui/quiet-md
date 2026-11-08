@@ -15,6 +15,14 @@ const RADIUS: f32 = 12.;
 /// Each version's notes: (version, [(中文, English)]). Only the running
 /// version's are shown; a version without notes shows nothing.
 const NOTES: &[(&str, &[(&str, &str)])] = &[
+    ("0.1.8", &[
+        ("直接打开并编辑本机 Markdown 文件，导入时保留 .md 格式，支持导入文件夹和拖入文件", "Edit local Markdown files in place, keep imported files as .md, and import folders or drag files in"),
+        ("首次启动按系统语言选择中文或英文，保留手动选择的语言", "Choose a supported system language on first launch and keep your manual language choice"),
+        ("新增多级文件夹，支持创建、重命名、拖动整理和文件操作撤销", "Organize notes in nested folders: create, rename, drag to move, and undo file operations"),
+        ("减少图片、文档预览和渲染缓存的内存占用", "Reduce memory used by images, document previews, and rendering caches"),
+        ("调整表格列宽后保持页面位置，不再跳页", "Keep the page in place after resizing table columns"),
+        ("Windows：移除侧栏重复的首页按钮", "Windows: remove the duplicate Home button in the sidebar"),
+    ]),
     ("0.1.7", &[
         ("退出时检查所有窗口的保存状态，保存冲突支持重新载入和另存副本", "Check every window before quitting; reload or save a copy when saving fails"),
         ("退出时无法保存的内容会保留为恢复副本，下次启动恢复", "Preserve unsaved work as recovery copies when quitting and restore it on next launch"),

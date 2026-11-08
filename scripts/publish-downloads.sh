@@ -37,6 +37,7 @@ for file in "$@"; do
     quiet-md-*-macos-arm64.zip) platform=macos-arm64; latest=quiet-md-macos-arm64.zip; type=application/zip ;;
     quiet-md-*-macos-x86_64.zip) platform=macos-x86_64; latest=quiet-md-macos-x86_64.zip; type=application/zip ;;
     quiet-md-*-windows-x64-setup.exe) platform=windows-x64; latest=quiet-md-windows-x64-setup.exe; type=application/vnd.microsoft.portable-executable ;;
+    quiet-md-*-x86_64.AppImage) platform=linux-x86_64; latest=quiet-md-x86_64.AppImage; type=application/octet-stream ;;
     *) echo "Unrecognised package name: $name" >&2; exit 1 ;;
   esac
   version=${name#quiet-md-}; version=${version%%-*}
@@ -61,6 +62,18 @@ for file in "$@"; do
   # latest/ keeps a stable URL; the download still saves under the versioned file name.
   put "latest/$latest" "$file" "$type" "public, max-age=300" "attachment; filename=\"$name\""
   size=$(stat -f %z "$file")
+  # Linux packages have detached signatures, but no in-app updater yet.
+  if [ "$platform" = linux-x86_64 ]; then
+    if [ -z "${DRY_RUN:-}" ]; then
+      headers=$(curl -sfI "$host/latest/$latest?check=$RANDOM" | tr -d '\r')
+      grep -qi "^content-length: $size$" <<<"$headers" && grep -qi "filename=\"$name\"" <<<"$headers" \
+        || { echo "latest/$latest did not update as expected" >&2; exit 1; }
+      curl -sfI "$host/v$version/$name" | tr -d '\r' | grep -qi "^content-length: $size$" \
+        || { echo "v$version/$name is not served" >&2; exit 1; }
+    fi
+    echo "$host/latest/$latest -> $name ($size bytes); manual updates on Linux"
+    continue
+  fi
   manifest="$work/update-$platform.json"
   python3 - "$version" "$host/v$version/$name" "$size" "$sig" > "$manifest" <<'PYTHON'
 import json, sys
