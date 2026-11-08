@@ -412,6 +412,13 @@ impl Workspace {
         cx.notify();
     }
 
+    pub(crate) fn has_home_drag(&self) -> bool { self.home.folders.drag.is_some() }
+
+    pub(crate) fn cancel_home_drag(&mut self, cx: &mut Context<Self>) {
+        self.home.folders.drag = None;
+        cx.notify();
+    }
+
     fn end_home_drag(&mut self, cx: &mut Context<Self>) {
         let Some(d) = self.home.folders.drag.as_mut().filter(|d| d.started && !d.returning) else { self.home.folders.drag = None; return };
         let target = d.over.clone().and_then(|f| self.home.folders.bounds.borrow().get(&f).copied().map(|b| (f, b)));
@@ -461,10 +468,16 @@ impl Workspace {
         let lines = canvas(|_, _, _| {}, move |b, _, window, _| paper.paint(b.origin, Face::Sketch, window)).absolute().inset_0();
         let layer = div().id("home-drag-overlay").absolute().inset_0().occlude().cursor(CursorStyle::ClosedHand)
             .on_mouse_move(cx.listener(|w, ev: &MouseMoveEvent, _, cx| {
-                if ev.pressed_button != Some(MouseButton::Left) { w.end_home_drag(cx); return; }
+                if ev.pressed_button != Some(MouseButton::Left) { w.cancel_home_drag(cx); return; }
                 w.move_home_drag(ev.position, cx);
             }))
-            .on_mouse_up(MouseButton::Left, cx.listener(|w, _, _, cx| w.end_home_drag(cx)))
+            .on_mouse_up(MouseButton::Left, cx.listener(|w, ev: &MouseUpEvent, window, cx| {
+                let p = ev.position;
+                let size = window.viewport_size();
+                if p.x < px(0.) || p.y < px(0.) || p.x >= size.width || p.y >= size.height { w.cancel_home_drag(cx); return; }
+                w.move_home_drag(p, cx);
+                w.end_home_drag(cx);
+            }))
             .child(div().absolute().left(px(x)).top(px(y)).w(px(w)).h(px(h))
                 .shadow(theme::shadow_panel()).rounded(px(10.))
                 .child(lines));

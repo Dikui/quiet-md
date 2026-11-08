@@ -329,7 +329,7 @@ impl Workspace {
             if let Some(parent) = &movement.parent { self.expanded.insert(parent.clone()); }
             let file_before = self.entries.clone();
             self.apply_tree_move(&movement);
-            movement.history = self.remember_files(file_before, crate::settings::tr("拖拽移动", "Drag move"));
+            movement.history = self.remember_tree_move(file_before, crate::settings::tr("拖拽移动", "Drag move"));
             self.folder_drag.pending.push_back(movement);
             self.save_next_tree_move(cx);
             self.sync_sub_pages(cx);
@@ -342,7 +342,7 @@ impl Workspace {
         let mut movement = PendingMove { id: id.to_string(), parent: Some(folder.to_string()), before: None, history: 0 };
         let file_before = self.entries.clone();
         self.apply_tree_move(&movement);
-        movement.history = self.remember_files(file_before, crate::settings::tr("拖拽移动", "Drag move"));
+        movement.history = self.remember_tree_move(file_before, crate::settings::tr("拖拽移动", "Drag move"));
         self.folder_drag.pending.push_back(movement);
         self.save_next_tree_move(cx);
         self.sync_sub_pages(cx);
@@ -378,16 +378,17 @@ impl Workspace {
         let history = movement.history;
         let mut writer = self.store.tree_writer();
         let task = cx.background_executor().spawn(async move {
+            let journal = writer.track_file_changes();
             let result = writer.move_in_tree(&movement.id, movement.parent.as_deref(), movement.before.as_deref());
             let restored = if result.is_err() { Some(writer.list()) } else { None };
-            (result, restored)
+            (result, restored, journal.take())
         });
         cx.spawn(async move |this, cx| {
-            let (result, restored) = task.await;
+            let (result, restored, changes) = task.await;
             let _ = this.update(cx, |w, cx| {
                 w.folder_drag.pending.pop_front();
                 w.folder_drag.saving = false;
-                if let Err(e) = result {
+                if let Err(ref e) = result {
                     w.forget_file_change(history);
                     // Restore only hierarchy, preserving edits made while the write was pending.
                     if let Some(restored) = restored {
@@ -403,6 +404,7 @@ impl Workspace {
                     w.sync_sub_pages(cx);
                     w.show_toast_kind(crate::ui::ToastKind::Error, &e.to_string(), cx);
                 }
+                if result.is_ok() { w.confirm_tree_history(history, changes); }
                 w.save_next_tree_move(cx);
                 cx.notify();
             });

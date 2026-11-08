@@ -432,7 +432,7 @@ impl Workspace {
 
     /// 批量创建副本: a "… 副本" of each checked doc; leaves 批量操作.
     pub(crate) fn batch_copy(&mut self, cx: &mut Context<Self>) {
-        let file_before = self.entries.clone();
+        let file_before = self.store.track_file_changes();
         let ids = self.checked();
         if ids.is_empty() {
             return;

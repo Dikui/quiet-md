@@ -345,7 +345,7 @@ impl Workspace {
             cx.observe_window_appearance(window, |this, _, cx| if crate::settings::sync_dark(cx) { crate::settings::refresh_all(this, cx); }),
             cx.observe_window_activation(window, |this, window, cx| {
                 if window.is_window_active() { if let Some(id) = &this.current { crate::quick_note::used(id, cx); } this.entries = this.store.list(); this.sort(); crate::update::check_if_stale(cx); cx.notify(); }
-                else { this.end_folder_drag(true, cx); this.cancel_shortcut_recording(cx); this.flush(cx); }
+                else { this.cancel_home_drag(cx); this.end_folder_drag(true, cx); this.cancel_shortcut_recording(cx); this.flush(cx); }
             }),
             cx.subscribe_in(&search, window, |this, _, ev: &TextFieldEvent, window, cx| {
                 match ev {
@@ -602,7 +602,7 @@ impl Workspace {
         if !self.save_before(cx, |w, window, cx| w.new_doc(window, cx)) {
             return;
         }
-        let file_before = self.entries.clone();
+        let file_before = self.store.track_file_changes();
         let parent = self.creation_parent();
         match self.store.create().and_then(|(id, doc)| {
             if let Some(parent) = &parent { self.store.set_parent(&id, Some(parent))?; }
@@ -669,7 +669,7 @@ impl Workspace {
                 return;
             }
         }
-        let file_before = self.entries.clone();
+        let file_before = self.store.track_file_changes();
         let mut deleted = vec![];
         let mut errors = vec![];
         for (id, root) in &groups {
@@ -822,7 +822,7 @@ impl Workspace {
                 peer.update(cx, |e, cx| e.set_title(&title, cx));
             } else {
                 if !self.flush(cx) { return; }
-                let file_before = self.entries.clone();
+                let file_before = self.store.track_file_changes();
                 match self.store.rename(&r.id, &title) {
                     Ok(meta) => {
                         if let Some(e) = self.entries.iter_mut().find(|e| e.id == r.id) {
@@ -1440,6 +1440,9 @@ impl Render for Workspace {
             // Esc leaves 批量操作 (closing its menu or confirmation first), even from the editor.
             .capture_key_down(cx.listener(|w, ev: &KeyDownEvent, _, cx| {
                 if w.file_history.busy && !(ev.keystroke.modifiers.secondary() && matches!(ev.keystroke.key.as_str(), "z" | "y")) { cx.stop_propagation(); return; }
+                if ev.keystroke.key == "escape" && w.has_home_drag() {
+                    w.cancel_home_drag(cx); cx.stop_propagation(); return;
+                }
                 if ev.keystroke.key == "escape" && w.folder_drag.active.is_some() {
                     w.end_folder_drag(true, cx); cx.stop_propagation(); return;
                 }

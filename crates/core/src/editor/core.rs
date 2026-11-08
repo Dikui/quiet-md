@@ -651,7 +651,10 @@ impl Core {
         let rename = |doc: &mut Document, sel: &mut Selection| {
             doc.title = RichText::plain(title);
             for pos in [&mut sel.anchor, &mut sel.head] {
-                if pos.block == TITLE { pos.offset = pos.offset.min(title.len()); }
+                if pos.block == TITLE {
+                    pos.offset = title.grapheme_indices(true).map(|(i, _)| i).chain(std::iter::once(title.len()))
+                        .take_while(|i| *i <= pos.offset).last().unwrap_or(0);
+                }
             }
         };
         rename(&mut self.doc, &mut self.sel);
@@ -3294,6 +3297,22 @@ mod tests {
 
     fn id(c: &Core, n: usize) -> BlockId {
         c.units()[n].id
+    }
+
+    #[test]
+    fn file_title_keeps_current_and_history_grapheme_boundaries() {
+        for title in ["中文", "👩‍💻笔记", "e\u{301}cole"] {
+            let mut c = doc("<title>abc</title><p>body</p>");
+            c.sel = Selection::caret(Pos::new(TITLE, 1));
+            c.checkpoint(EditKind::Other);
+            c.receive_file_title(title);
+            assert_eq!(c.sel.head.offset, 0);
+            assert_eq!(c.undo.back().unwrap().sel.head.offset, 0);
+            c.backspace();
+            assert_eq!(c.doc.title.text, title);
+            assert!(c.undo());
+            assert_eq!(c.doc.title.text, title);
+        }
     }
 
     #[test]

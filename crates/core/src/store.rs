@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use crate::time::now;
 use std::time::UNIX_EPOCH;
 #[path = "file_history.rs"] mod file_history;
-pub use file_history::{FileState, FileDelta};
+pub use file_history::{FileState, FileDelta, FileChanges};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Meta {
@@ -194,6 +194,7 @@ pub struct Entry {
 }
 
 pub struct Store {
+    file_changes: Vec<std::sync::Weak<std::sync::Mutex<Vec<FileDelta>>>>,
     loaded: std::cell::RefCell<HashMap<String, String>>,
     /// What `list` parsed from each file, kept while its mtime and size stay
     /// the same: re-reading every document on each window activation stalled
@@ -368,7 +369,7 @@ impl Store {
         }
         let index = load_json(&root.join("index.json"), "文档索引", &mut warnings);
         let trash = load_json(&root.join("trash").join("index.json"), "回收站索引", &mut warnings);
-        let mut store = Store { root, index, trash, warnings, loaded: Default::default(), parsed: HashMap::new() };
+        let mut store = Store { file_changes: vec![], root, index, trash, warnings, loaded: Default::default(), parsed: HashMap::new() };
         if let Ok(entries) = std::fs::read_dir(store.recovery_dir()) {
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -414,11 +415,14 @@ impl Store {
     fn begin_write(&mut self) -> Result<WriteLock> {
         let f = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(self.root.join(".lock"))?;
         f.lock()?;
+        let lock = WriteLock(f);
+        let marker: FormatMarker = serde_json::from_slice(&std::fs::read(self.root.join("format.json"))?)?;
+        anyhow::ensure!(marker.format <= FORMAT, "这个文档库由更新版本的 Quiet.md 创建，请升级后再打开");
         // An unreadable index is not judged here (that is `open`'s job): the
         // version in memory is written back unchanged.
         if let Some(index) = reread(&self.root.join("index.json")) { self.index = index; }
         if let Some(trash) = reread(&self.root.join("trash").join("index.json")) { self.trash = trash; }
-        Ok(WriteLock(f))
+        Ok(lock)
     }
 
     fn save_index(&self) -> Result<()> {
@@ -527,6 +531,7 @@ impl Store {
         let id = uuid::Uuid::new_v4().to_string();
         let _lock = self.begin_write()?;
         self.save_now(&id, doc)?;
+        self.record_file_change(&id, None);
         Ok(id)
     }
 
@@ -545,6 +550,7 @@ impl Store {
     /// takes it along (`None`: deleted itself).
     pub fn delete(&mut self, id: &str, root: Option<&str>) -> Result<()> {
         let _lock = self.begin_write()?;
+        let before = self.file_state(id);
         let target = self.trash_path(id);
         anyhow::ensure!(!target.try_exists()?, "回收站已存在同名文档，未覆盖：{id}");
         std::fs::create_dir_all(self.root.join("trash"))?;
@@ -561,6 +567,7 @@ impl Store {
         if let Err(e) = self.save_index() {
             self.warnings.push(format!("文档已移入回收站，文档索引清理失败：{e}"));
         }
+        self.record_file_change(id, before);
         Ok(())
     }
 
@@ -690,6 +697,7 @@ impl Store {
             if !self.trash.contains_key(k) { continue; }
             if self.trash.get(k).is_none_or(|t| t.meta.folder.is_none()) { std::fs::rename(self.trash_path(k), self.path(k)).with_context(|| format!("恢复文档 {k} 失败，已恢复的文档保留在文档库"))?; }
             self.trash.remove(k);
+            self.record_file_change(k, None);
         }
         if let Err(e) = self.save_trash() {
             self.warnings.push(format!("文档已恢复，回收站索引清理失败：{e}"));
@@ -761,6 +769,7 @@ impl Store {
     /// 重命名 a document that isn't open: rewrite its title on disk.
     pub fn rename(&mut self, id: &str, title: &str) -> Result<Meta> {
         let _lock = self.begin_write()?;
+        let before = self.file_state(id);
         if self.index.get(id).is_some_and(|m| m.folder.is_some()) {
             let previous = self.index.clone();
             let m = self.index.get_mut(id).unwrap();
@@ -768,11 +777,14 @@ impl Store {
             m.modified = now();
             let meta = m.clone();
             if let Err(e) = self.save_index() { self.index = previous; return Err(e); }
+            self.record_file_change(id, before);
             return Ok(meta);
         }
         let mut doc = self.load(id)?;
         doc.title = crate::model::RichText::plain(title);
-        self.save_now(id, &doc)
+        let meta = self.save_now(id, &doc)?;
+        self.record_file_change(id, before);
+        Ok(meta)
     }
 
     /// Note that `id` was just opened.
@@ -836,6 +848,41 @@ mod tests {
 
     fn doc(title: &str) -> Document {
         Document { title: crate::model::RichText::plain(title), ..Default::default() }
+    }
+
+    #[test]
+    fn file_history_ignores_external_creations() {
+        let lib = Lib::new("file-journal");
+        let mut local = lib.open();
+        let mut other = lib.open();
+        let journal = local.track_file_changes();
+        let external = other.create_from(&doc("external")).unwrap();
+        let own = local.create_folder("own", None).unwrap();
+        local.list();
+        let changes = journal.take();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].id, own);
+        local.apply_file_history(&changes, false).unwrap();
+        assert!(local.list().iter().any(|e| e.id == external));
+        assert_eq!(local.load(&external).unwrap().title.text, "external");
+        local.apply_file_history(&changes, true).unwrap();
+        assert!(local.list().iter().any(|e| e.id == own));
+    }
+
+    #[test]
+    fn tree_history_uses_fresh_disk_positions() {
+        let lib = Lib::new("tree-journal");
+        let mut local = lib.open();
+        let a = local.create_folder("a", None).unwrap();
+        let b = local.create_folder("b", None).unwrap();
+        let page = local.create_from(&doc("page")).unwrap();
+        let mut other = lib.open();
+        other.set_parent(&page, Some(&a)).unwrap();
+        let journal = local.track_file_changes();
+        local.set_parent(&page, Some(&b)).unwrap();
+        let changes = journal.take();
+        local.apply_file_history(&changes, false).unwrap();
+        assert_eq!(local.index[&page].parent.as_ref(), Some(&a));
     }
 
     #[test]
@@ -1043,7 +1090,7 @@ mod tests {
         let index = std::fs::read(trash.join("index.json")).unwrap();
         std::fs::rename(&trash, lib.0.join("trash-away")).unwrap();
         std::fs::write(&trash, b"").unwrap();
-        let mut s = Store { root: lib.0.clone(), index: HashMap::new(), trash: serde_json::from_slice(&index).unwrap(), warnings: vec![], loaded: Default::default(), parsed: HashMap::new() };
+        let mut s = Store { file_changes: vec![], root: lib.0.clone(), index: HashMap::new(), trash: serde_json::from_slice(&index).unwrap(), warnings: vec![], loaded: Default::default(), parsed: HashMap::new() };
         assert_eq!(s.list_trash().len(), 1);
         assert_eq!(s.trash.len(), 1);
     }

@@ -433,7 +433,7 @@ impl Workspace {
 
     pub(crate) fn prepare_manual_order(&mut self, cx: &mut Context<Self>) -> bool {
         if self.tree_writes_pending() { return false; }
-        let previous = self.entries.clone();
+        let previous = self.store.track_file_changes();
         if let Err(e) = self.store.initialize_manual_order() { self.show_toast_kind(crate::ui::ToastKind::Error, &e.to_string(), cx); return false; }
         self.entries = self.store.list();
         self.remember_files(previous, crate::settings::tr("初始化手动排序", "Initialize manual order"));
@@ -809,7 +809,7 @@ impl Workspace {
         // a level holding them gets more air between cells.
         let gap = if mixed { 24. } else { 16. };
         let wide_cols = (((avail + gap) / (200. + gap)).floor() as usize).max(1);
-        let n = if wide_cols >= 4 { wide_cols } else { (((avail + gap) / (160. + gap)).floor() as usize).clamp(1, 3) };
+        let n = if wide_cols >= 4 { (((avail + gap) / (240. + gap)).floor() as usize).max(4) } else { (((avail + gap) / (160. + gap)).floor() as usize).clamp(1, 3) };
         let card_h = ((avail - gap * (n - 1) as f32) / n as f32) * (264. / 236.);
         let rows = entries.len().div_ceil(n);
         let grid = uniform_list("home-grid-area", rows, cx.processor(move |workspace, range: std::ops::Range<usize>, window, cx| {

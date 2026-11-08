@@ -16,6 +16,58 @@ impl FileState {
 #[derive(Clone)]
 pub struct FileDelta { pub id: String, pub before: Option<FileState>, pub after: Option<FileState> }
 
+/// A scoped journal of successful writes, independent of any window's cached list.
+#[derive(Default)]
+pub struct FileChanges(std::sync::Arc<std::sync::Mutex<Vec<FileDelta>>>, bool);
+impl FileChanges {
+    pub fn take(self) -> Vec<FileDelta> {
+        if self.1 { return vec![]; }
+        let mut merged: HashMap<String, FileDelta> = HashMap::new();
+        for delta in std::mem::take(&mut *self.0.lock().unwrap()) {
+            if let Some(previous) = merged.get_mut(&delta.id) { previous.after = delta.after; }
+            else { merged.insert(delta.id.clone(), delta); }
+        }
+        let mut changes: Vec<_> = merged.into_values().filter(|c| c.before != c.after).collect();
+        changes.sort_by(|a, b| a.id.cmp(&b.id));
+        changes
+    }
+}
+
+impl Store {
+    pub fn track_file_changes(&mut self) -> FileChanges {
+        self.file_changes.retain(|w| w.strong_count() > 0);
+        let changes = FileChanges(Default::default(), !self.file_changes.is_empty());
+        self.file_changes.push(std::sync::Arc::downgrade(&changes.0));
+        changes
+    }
+
+    pub(super) fn file_state(&self, id: &str) -> Option<FileState> {
+        let m = self.index.get(id)?;
+        let title = m.folder.clone().or_else(|| self.load(id).ok().map(|d| d.title.text))?;
+        Some(FileState { title, folder: m.folder.is_some(), parent: m.parent.clone(), order: m.order, root_order: m.root_order })
+    }
+
+    pub(super) fn record_file_change(&self, id: &str, before: Option<FileState>) {
+        if !self.file_changes.iter().any(|w| w.strong_count() > 0) { return; }
+        let after = self.file_state(id);
+        if before == after { return; }
+        let delta = FileDelta { id: id.to_string(), before, after };
+        for journal in self.file_changes.iter().filter_map(|w| w.upgrade()) { journal.lock().unwrap().push(delta.clone()); }
+    }
+
+    pub(super) fn record_tree_changes(&self, previous: &HashMap<String, Meta>) {
+        if !self.file_changes.iter().any(|w| w.strong_count() > 0) { return; }
+        for (id, m) in &self.index {
+            let old = previous.get(id);
+            if old.is_some_and(|o| (&o.parent, o.order, o.root_order) == (&m.parent, m.order, m.root_order)) { continue; }
+            let before = old.and_then(|o| self.file_state(id).map(|mut state| {
+                state.parent = o.parent.clone(); state.order = o.order; state.root_order = o.root_order; state
+            }));
+            self.record_file_change(id, before);
+        }
+    }
+}
+
 impl Store {
     pub fn accept_file_title(&self, id: &str, title: &str) -> Result<()> {
         let mut loaded = self.loaded.borrow_mut();

@@ -11,7 +11,34 @@ pub(crate) struct FileHistory {
     requests: VecDeque<bool>,
 }
 impl Workspace {
-    pub(crate) fn remember_files(&mut self, before: Vec<Entry>, label: &'static str) -> u64 {
+    pub(crate) fn remember_files(&mut self, journal: crate::store::FileChanges, label: &'static str) -> u64 {
+        let changes = journal.take();
+        let entries = self.file_record_entries(&changes);
+        self.push_file_record(changes, entries, label)
+    }
+
+    fn file_record_entries(&self, changes: &[FileDelta]) -> Vec<(Option<Entry>, Option<Entry>)> {
+        changes.iter().map(|c| {
+            let entry = self.entries.iter().find(|e| e.id == c.id).cloned();
+            let make = |state: &FileState| {
+                let mut e = entry.clone().unwrap_or_else(|| Entry { id: c.id.clone(), meta: Default::default(), title: String::new(), icon: None, body: String::new(), reminders: vec![], links: vec![] });
+                e.title = state.title.clone(); e.meta.folder = state.folder.then(|| state.title.clone());
+                e.meta.parent = state.parent.clone(); e.meta.order = state.order; e.meta.root_order = state.root_order;
+                e
+            };
+            (c.before.as_ref().map(make), c.after.as_ref().map(make))
+        }).collect()
+    }
+
+    pub(crate) fn confirm_tree_history(&mut self, token: u64, changes: Vec<FileDelta>) {
+        if changes.is_empty() { self.forget_file_change(token); return; }
+        let entries = self.file_record_entries(&changes);
+        if let Some(record) = self.file_history.undo.iter_mut().chain(self.file_history.redo.iter_mut()).find(|r| r.token == token) {
+            record.changes = changes; record.entries = entries;
+        }
+    }
+
+    pub(crate) fn remember_tree_move(&mut self, before: Vec<Entry>, label: &'static str) -> u64 {
         let old: HashMap<_, _> = before.into_iter().map(|e| (e.id.clone(), e)).collect();
         let new: HashMap<_, _> = self.entries.iter().map(|e| (e.id.clone(), e.clone())).collect();
         let mut ids: Vec<_> = old.keys().chain(new.keys()).cloned().collect(); ids.sort(); ids.dedup();
@@ -22,6 +49,10 @@ impl Workspace {
             entries.push((old.get(&id).cloned(), new.get(&id).cloned()));
             changes.push(FileDelta { id, before: a, after: b });
         }
+        self.push_file_record(changes, entries, label)
+    }
+
+    fn push_file_record(&mut self, changes: Vec<FileDelta>, entries: Vec<(Option<Entry>, Option<Entry>)>, label: &'static str) -> u64 {
         if changes.is_empty() { return 0; }
         self.file_history.next += 1;
         let token = self.file_history.next;

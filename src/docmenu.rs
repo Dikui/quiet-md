@@ -81,7 +81,7 @@ impl Workspace {
 
     /// 创建副本: "<标题> 副本", opened right away.
     pub fn duplicate_doc(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let file_before = self.entries.clone();
+        let file_before = self.store.track_file_changes();
         self.close_doc_menu(cx);
         self.row_menu = None;
         if let Some(new) = self.copy_doc(id, cx) {

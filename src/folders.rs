@@ -6,7 +6,7 @@ use gpui::*;
 
 impl Workspace {
     pub(crate) fn new_root_doc(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let file_before = self.entries.clone();
+        let file_before = self.store.track_file_changes();
         if !self.save_before(cx, |w, window, cx| w.new_root_doc(window, cx)) { return; }
         match self.store.create() {
             Ok((id, _)) => { self.entries = self.store.list(); self.sort(); self.folded[1] = false; self.open(&id, window, cx); }
@@ -67,7 +67,7 @@ impl Workspace {
     }
 
     pub(crate) fn new_folder(&mut self, parent: Option<String>, window: &mut Window, cx: &mut Context<Self>) {
-        let file_before = self.entries.clone();
+        let file_before = self.store.track_file_changes();
         self.create_menu = None;
         match self.store.create_folder(tr("未命名文件夹", "Untitled folder"), parent.as_deref()) {
             Ok(id) => {
@@ -131,15 +131,15 @@ impl Workspace {
         }
         crumbs = crumbs.child(sep()).child(div().min_w_0().px(px(4.)).overflow_hidden().whitespace_nowrap().text_ellipsis()
             .font_weight(FontWeight::SEMIBOLD).text_color(Theme::text()).child(ui_text(title)));
-        let action = |key: &'static str, glyph: &'static str, label: &'static str| div().id(key).no_drag().flex_none().h(px(28.)).px(px(10.))
-            .flex().items_center().gap(px(6.)).rounded(px(9.)).cursor_pointer().text_size(px(13.)).line_height(px(20.)).text_color(Theme::text())
-            .hover(|s| s.bg(Theme::fill_hover())).child(icon(glyph, 14., Theme::icon())).child(label);
         let (folder, doc) = (id.clone(), id.clone());
         let header = crate::trash::page_header_with(self, crumbs, 26., cx)
-            .child(div().flex_none().flex().items_center().gap(px(4.))
-                .child(action("folder-new-doc", "plus", tr("新建文档", "New document")).on_click(cx.listener(move |w, _, window, cx| w.new_child(&doc, window, cx))))
-                .child(action("folder-new-folder", "folder-plus", tr("新建文件夹", "New folder")).on_click(cx.listener(move |w, _, window, cx| w.new_folder(Some(folder.clone()), window, cx))))
-                .child(self.view_switch(cx).no_drag().ml(px(12.))));
+            .child(crate::ui::header_icon("folder-new-folder", "folder-plus")
+                .tip(tr("新建文件夹", "New folder"), None)
+                .on_click(cx.listener(move |w, _, window, cx| w.new_folder(Some(folder.clone()), window, cx))))
+            .child(crate::ui::header_icon("folder-new-doc", "plus")
+                .tip(tr("新建文档", "New document"), Some(crate::shortcuts::hint("workspace::NewDoc", "⌘ + N")))
+                .on_click(cx.listener(move |w, _, window, cx| w.new_child(&doc, window, cx))))
+            .child(self.view_switch(cx).no_drag().ml(px(12.)));
         let children = self.level_entries(Some(&id));
         let body = if children.is_empty() {
             div().flex_1().pt(px(80.)).text_center().text_size(px(14.)).text_color(Theme::text_caption()).child(tr("这个文件夹还是空的", "This folder is empty")).into_any_element()

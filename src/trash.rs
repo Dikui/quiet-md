@@ -239,7 +239,7 @@ impl Workspace {
     }
 
     fn restore_doc(&mut self, id: &str, cx: &mut Context<Self>) {
-        let file_before = self.entries.clone();
+        let file_before = self.store.track_file_changes();
         match self.store.restore(id) {
             Ok(moved) => {
                 self.show_toast(if moved { crate::settings::text("恢复成功。部分文档由于原位置不存在，已恢复到“我的文档”") } else { crate::settings::text("恢复成功") }, cx);

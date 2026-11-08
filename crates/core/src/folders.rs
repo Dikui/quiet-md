@@ -3,12 +3,17 @@ use super::*;
 impl Store {
     /// Independent handle for background tree writes; begin_write reloads under the library lock.
     pub fn tree_writer(&self) -> Self {
-        Self { root: self.root.clone(), index: self.index.clone(), trash: HashMap::new(),
+        Self { file_changes: vec![], root: self.root.clone(), index: self.index.clone(), trash: HashMap::new(),
             loaded: Default::default(), parsed: HashMap::new(), warnings: vec![] }
     }
 
     pub(super) fn migrate_folders(&mut self) -> Result<()> {
         let _lock = self.begin_write()?;
+        let marker: FormatMarker = serde_json::from_slice(&std::fs::read(self.root.join("format.json"))?)?;
+        if marker.format < FORMAT {
+            let backup = self.root.join("index.before-folders.json");
+            if !backup.exists() { write_atomic(&backup, &serde_json::to_vec_pretty(&self.index)?)?; }
+        }
         let legacy: Vec<String> = self.index.values().filter_map(|m| m.parent.clone())
             .filter(|id| self.index.get(id).is_some_and(|m| m.folder.is_none()) && self.path(id).is_file())
             .collect::<std::collections::HashSet<_>>().into_iter().collect();
@@ -41,6 +46,7 @@ impl Store {
                 for (i, k) in kids.iter().enumerate() { if let Some(m) = self.index.get_mut(k) { m.order = i as u64 + 1; m.root_order = None; } }
             }
             if let Err(e) = self.save_index() { self.index = previous; return Err(e); }
+            self.record_tree_changes(&previous);
         }
         write_atomic(&self.root.join("format.json"), &serde_json::to_vec_pretty(&FormatMarker { format: FORMAT })?)?;
         Ok(())
@@ -64,6 +70,7 @@ impl Store {
         let t = now();
         self.index.insert(id.clone(), Meta { folder: Some(title.to_string()), parent: parent.map(str::to_string), created: t, modified: t, ..Default::default() });
         if let Err(e) = self.save_index() { self.index.remove(&id); return Err(e); }
+        self.record_file_change(&id, None);
         Ok(id)
     }
 
@@ -89,6 +96,7 @@ impl Store {
         }
         if !changed && initialized { return Ok(()); }
         if let Err(e) = self.save_index() { self.index = previous; return Err(e); }
+        self.record_tree_changes(&previous);
         settings.home_manual_initialized = true;
         self.save_settings(&settings)
     }
@@ -117,6 +125,7 @@ impl Store {
             else { m.order = i as u64 + 1; m.root_order = None; }
         }
         if let Err(e) = self.save_index() { self.index = previous; return Err(e); }
+        self.record_tree_changes(&previous);
         Ok(())
     }
 }

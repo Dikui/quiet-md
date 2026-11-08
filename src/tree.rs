@@ -141,7 +141,7 @@ impl Workspace {
 
     /// The row "+" → 文档: a new page under `parent`, opened.
     pub fn new_child(&mut self, parent: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let file_before = self.entries.clone();
+        let file_before = self.store.track_file_changes();
         let parent = if self.entries.iter().any(|e| e.id == parent && e.meta.folder.is_some()) { parent.to_string() }
             else { return; };
         let parent = parent.as_str();
@@ -192,7 +192,7 @@ impl Workspace {
     /// 移动到: hang each page under `target` (`None`: top level), skipping
     /// moves into its own subtree.
     pub(crate) fn move_docs(&mut self, ids: &[String], target: Option<String>, cx: &mut Context<Self>) {
-        let file_before = self.entries.clone();
+        let file_before = self.store.track_file_changes();
         let mut failed = false;
         for id in ids {
             let inside = target.as_ref().is_some_and(|t| Tree::new(&self.entries).subtree(id).contains(t));
