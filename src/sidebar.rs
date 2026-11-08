@@ -151,8 +151,9 @@ impl Workspace {
                 .when(home_on, |d| d.bg(Theme::sidebar_selected()).text_color(Theme::text()))
                 .when(!home_on, |d| d.text_color(Theme::sidebar_text()).hover(|s| s.bg(Theme::sidebar_hover())))
                 .child(
+                    // Selected or not, the same outline: the row's fill marks the selection.
                     div().size(px(20.)).flex_none().flex().items_center().justify_center().mr(px(9.)).child(icon(
-                        if home_on { "home-filled" } else { "home" },
+                        "home",
                         ROW_ICON,
                         Theme::icon(),
                     )),
@@ -567,22 +568,28 @@ impl Workspace {
         let selected = (self.view == View::Doc && self.current.as_deref() == Some(e.id.as_str())) || (self.view == View::Folder && self.folder_current.as_deref() == Some(e.id.as_str()));
         let renaming = self.rename.as_ref().filter(|r| r.id == e.id).map(|r| r.field.clone());
         let title = match renaming {
-            Some(field) => div()
-                .ml(px(6.))
-                .mr(px(6.))
-                .flex_1()
-                .min_w_0()
-                .h(px(24.))
-                .px(px(6.))
-                .flex()
-                .items_center()
-                .rounded(px(6.))
-                .bg(crate::theme::raised(Theme::bg_body()))
-                .border_1()
-                .border_color(Theme::primary_500())
-                .text_size(px(13.))
-                .child(field)
-                .into_any_element(),
+            // The field opens with the text exactly where the name was (2 + 1 + 6 = the
+            // label's 9), a white well with a thin edge and a soft glow, fading in.
+            Some(field) => {
+                let a = self.folder_drag.rename_in(&e.id);
+                div()
+                    .ml(px(2.))
+                    .mr(px(4.))
+                    .flex_1()
+                    .min_w_0()
+                    .h(px(26.))
+                    .px(px(6.))
+                    .flex()
+                    .items_center()
+                    .rounded(px(ROW_R - 2.))
+                    .bg(crate::theme::raised(Theme::bg_body()).opacity(a))
+                    .border_1()
+                    .border_color(Theme::sidebar_field_edge().opacity(a))
+                    .shadow(vec![BoxShadow { color: Theme::sidebar_field_ring().opacity(a), offset: point(px(0.), px(0.)), blur_radius: px(0.), spread_radius: px(3.) }])
+                    .text_size(px(13.))
+                    .child(field)
+                    .into_any_element()
+            }
             None => div()
                 .pl(px(9.))
                 .flex_1()
@@ -626,11 +633,27 @@ impl Workspace {
                 )
             })
             .child({
-                div().size(px(20.)).flex_none().flex().items_center().justify_center().map(|d| match &e.icon {
+                // A folder with something in it folds from its icon, the way Notion's
+                // pages do: hovering the row turns the icon into a chevron (pointing
+                // down when open), and a press on it folds instead of opening the page.
+                let toggle = folder && key == "doc" && !drop_target && self.folder_drag.has_children(&e.id);
+                let chevron = if toggle { self.folder_drag.reveal(&e.id) } else { 0. };
+                let open = self.expanded.contains(&e.id);
+                div().size(px(20.)).flex_none().flex().items_center().justify_center().relative()
+                    .when(toggle, |d| d.rounded(px(5.)).hover(|s| s.bg(Theme::sidebar_hover()))
+                        .on_mouse_down(MouseButton::Left, cx.listener(|w, ev: &MouseDownEvent, _, _| {
+                            w.folder_drag.icon_press = true;
+                            w.folder_drag.icon_alt = ev.modifiers.alt;
+                        })))
+                    .map(|d| match &e.icon {
                     _ if folder => {
                         let s = if key == "doc" { self.folder_drag.pop(&e.id) } else { 1. };
-                        d.child(icon(if drop_target { "folder-input" } else if self.expanded.contains(&e.id) { "folder-open" } else { "folder" }, ROW_ICON, Theme::icon())
-                            .with_transformation(Transformation::scale(size(s, s))))
+                        d.child(div().absolute().inset_0().flex().items_center().justify_center().opacity(1. - chevron)
+                            .child(icon(if drop_target { "folder-input" } else if open { "folder-open" } else { "folder" }, ROW_ICON, Theme::icon())
+                                .with_transformation(Transformation::scale(size(s, s)))))
+                        .when(chevron > 0.005, |d| d.child(div().absolute().inset_0().flex().items_center().justify_center().opacity(chevron)
+                            .child(icon("disclosure", ROW_ICON, Theme::icon())
+                                .with_transformation(Transformation::rotate(radians(if open { std::f32::consts::FRAC_PI_2 } else { 0. }))))))
                     }
                     Some(em) => d.text_size(px(13.)).line_height(px(20.)).child(em.clone()),
                     None => d.child(icon("doc", ROW_ICON, Theme::icon())),

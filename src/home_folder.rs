@@ -620,10 +620,10 @@ impl Workspace {
         let [x, y, w, h] = d.rect.p;
         let e = self.entries.iter().find(|e| e.id == d.id)?.clone();
         let placeholder = (manual && !d.returning && d.over.is_none()).then_some(d.slot.p);
-        let page = self.thumb_page(&e, 12.);
-        let seed = seed(&e.id);
-        let paper = Paper { cx: w / 2., cy: h / 2., w, h, rot: 0., seed };
-        let lines = canvas(|_, _, _| {}, move |b, _, window, _| paper.paint(b.origin, Face::Content, window)).absolute().inset_0();
+        // The carried card is a page's skeleton (a heading bar and lines of text),
+        // painted straight onto the GPU: nothing is laid out while it moves.
+        let paper = Paper { cx: w / 2., cy: h / 2., w, h, rot: 0., seed: seed(&e.id) };
+        let lines = canvas(|_, _, _| {}, move |b, _, window, _| paper.paint(b.origin, Face::Sketch, window)).absolute().inset_0();
         let layer = div().id("home-drag-overlay").absolute().inset_0().occlude().cursor(CursorStyle::ClosedHand)
             .on_mouse_move(cx.listener(|w, ev: &MouseMoveEvent, _, cx| {
                 if ev.pressed_button != Some(MouseButton::Left) { w.end_home_drag(cx); return; }
@@ -633,8 +633,7 @@ impl Workspace {
             .when_some(placeholder, |d, [x,y,w,h]| d.child(div().absolute().left(px(x)).top(px(y)).w(px(w)).h(px(h)).rounded(px(16.)).bg(Theme::sidebar_drop_slot())))
             .child(div().absolute().left(px(x)).top(px(y)).w(px(w)).h(px(h))
                 .shadow(theme::shadow_panel()).rounded(px(10.))
-                .child(lines)
-                .child(div().absolute().inset_0().rounded(px(10.)).overflow_hidden().child(page)));
+                .child(lines));
         Some(deferred(layer).with_priority(5).into_any_element())
     }
 }

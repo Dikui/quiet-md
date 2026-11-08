@@ -15,12 +15,15 @@ use std::sync::{Arc, LazyLock, Mutex, RwLock};
 
 static FEISHU: AtomicBool = AtomicBool::new(false);
 static ENGLISH: AtomicBool = AtomicBool::new(true);
+static MOTION_HIGH: AtomicBool = AtomicBool::new(false);
 static PREFS: RwLock<Option<Preferences>> = RwLock::new(None);
 
 /// The active document theme draws blocks the 飞书 way (else Craft's).
 pub fn feishu() -> bool { FEISHU.load(Ordering::Relaxed) }
 pub(crate) fn set_base(feishu: bool) { FEISHU.store(feishu, Ordering::Relaxed); }
 pub fn english() -> bool { ENGLISH.load(Ordering::Relaxed) }
+/// 外观 › 动画 is 丰富: folding, the selection and hover animate too (else they answer at once).
+pub fn motion_high() -> bool { MOTION_HIGH.load(Ordering::Relaxed) }
 pub fn tr(zh: &'static str, en: &'static str) -> &'static str { if english() { en } else { zh } }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -41,10 +44,12 @@ pub struct Preferences {
     pub appearance: String,
     /// The last version that opened this library (changelog.rs).
     pub seen_version: String,
+    /// 动画: "high" animates folding, the selection and hover; empty keeps them instant.
+    pub motion: String,
 }
 
 impl Default for Preferences {
-    fn default() -> Self { Preferences { theme: String::new(), feishu: true, english: true, remote_images: true, quick_hotkey: true, auto_update: true, appearance: String::new(), seen_version: String::new() } }
+    fn default() -> Self { Preferences { theme: String::new(), feishu: true, english: true, remote_images: true, quick_hotkey: true, auto_update: true, appearance: String::new(), seen_version: String::new(), motion: String::new() } }
 }
 
 impl Preferences {
@@ -63,6 +68,7 @@ pub fn load() {
 fn apply(p: Preferences) {
     FEISHU.store(p.feishu, Ordering::Relaxed);
     ENGLISH.store(p.english, Ordering::Relaxed);
+    MOTION_HIGH.store(p.motion == "high", Ordering::Relaxed);
     // Before the themes are read (startup) the base comes from `feishu`.
     themes::select(&p.theme_id());
     *PREFS.write().unwrap() = Some(p);
@@ -650,6 +656,9 @@ impl Workspace {
                         segmented("appearance", &[tr("跟随系统", "System"), tr("浅色", "Light"), tr("深色", "Dark")], at,
                             |w, i, cx| w.set_pref(|p| p.appearance = ["", "light", "dark"][i].into(), cx), cx)
                     }).into_any_element(),
+                    row(tr("动画", "Animation"), Some(tr("克制：切换即时，只有拖拽带动画。丰富：展开收起、选中和悬停也带动画。", "Low: switching is instant, only dragging animates. High: folding, selection and hover animate too.").into()),
+                        segmented("motion", &[tr("克制", "Low"), tr("丰富", "High")], usize::from(prefs().motion == "high"),
+                            |w, i, cx| w.set_pref(|p| p.motion = ["", "high"][i].into(), cx), cx)).into_any_element(),
                     row(tr("文档主题", "Document theme"), None, picker).into_any_element(),
                     sample.into_any_element(),
                     row(tr("主题 CSS", "Theme CSS"), Some(where_),

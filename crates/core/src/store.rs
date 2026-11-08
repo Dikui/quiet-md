@@ -462,10 +462,12 @@ impl Store {
             let Parsed { title, icon, body, reminders, links } = parsed;
             out.push(Entry { id, meta: meta.clone(), title, icon, body, reminders, links });
         }
-        for (id, meta) in &self.index {
-            if let Some(title) = &meta.folder {
-                out.push(Entry { id: id.clone(), meta: meta.clone(), title: title.clone(), icon: None, body: String::new(), reminders: vec![], links: vec![] });
-            }
+        // Folders in id order: the index is a HashMap, whose order changes every time it is re-read.
+        let mut folders: Vec<(&String, &Meta)> = self.index.iter().filter(|(_, m)| m.folder.is_some()).collect();
+        folders.sort_by(|a, b| a.0.cmp(b.0));
+        for (id, meta) in folders {
+            let title = meta.folder.clone().unwrap_or_default();
+            out.push(Entry { id: id.clone(), meta: meta.clone(), title, icon: None, body: String::new(), reminders: vec![], links: vec![] });
         }
         let seen: std::collections::HashSet<&str> = out.iter().map(|e| e.id.as_str()).collect();
         self.parsed.retain(|id, _| seen.contains(id.as_str()));

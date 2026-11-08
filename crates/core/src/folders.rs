@@ -94,10 +94,12 @@ impl Store {
             if anchor == id { return Ok(()); }
         }
         let mut siblings: Vec<String> = self.index.iter().filter(|(k, m)| self.index_has(k) && m.parent.as_deref() == parent).map(|(k, _)| k.clone()).collect();
-        siblings.sort_by(|a, b| {
-            let (a, b) = (&self.index[a], &self.index[b]);
-            if parent.is_some() { a.sibling_key().cmp(&b.sibling_key()) }
-            else { (a.root_order.unwrap_or(0), std::cmp::Reverse(a.modified)).cmp(&(b.root_order.unwrap_or(0), std::cmp::Reverse(b.modified))) }
+        // The sidebar's order (`Tree::new`), ties broken by id like there, so the
+        // numbers written here match the order the drop was made in.
+        siblings.sort_by(|ka, kb| {
+            let (a, b) = (&self.index[ka], &self.index[kb]);
+            if parent.is_some() { (a.sibling_key(), ka).cmp(&(b.sibling_key(), kb)) }
+            else { (a.root_order.unwrap_or(0), std::cmp::Reverse(a.modified), ka).cmp(&(b.root_order.unwrap_or(0), std::cmp::Reverse(b.modified), kb)) }
         });
         siblings.retain(|key| key != id);
         let pos = before.and_then(|key| siblings.iter().position(|x| x == key)).unwrap_or(siblings.len());

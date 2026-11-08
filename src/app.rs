@@ -479,7 +479,7 @@ impl Workspace {
     /// Most recently modified first.
     pub(crate) fn sort(&mut self) {
         self.reapply_pending_tree_moves();
-        self.entries.sort_by_key(|e| std::cmp::Reverse(e.meta.modified));
+        self.entries.sort_by(|a, b| b.meta.modified.cmp(&a.meta.modified).then_with(|| a.id.cmp(&b.id)));
     }
 
     pub fn query(&self, cx: &App) -> String {

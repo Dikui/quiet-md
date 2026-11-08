@@ -390,6 +390,9 @@ impl Theme {
     /// slot the row will land in, and the glow a landed row fades out from.
     pub fn sidebar_drop() -> Hsla { ca(craft::N1000, 0.05) }
     pub fn sidebar_drop_slot() -> Hsla { ca(craft::N1000, 0.08) }
+    /// Renaming in the sidebar: the field's thin edge and the soft focus glow around it.
+    pub fn sidebar_field_edge() -> Hsla { ca(craft::B500, 0.6) }
+    pub fn sidebar_field_ring() -> Hsla { ca(craft::B500, 0.16) }
     pub fn sidebar_landed() -> Hsla { ca(craft::N1000, 0.07) }
     /// Section headers on the sidebar.
     pub fn sidebar_section() -> Hsla { c(0x333739) }
