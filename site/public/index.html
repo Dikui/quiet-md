@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>quiet.md — 又快又安静的本地笔记</title>
-<meta name="description" content="Rust + GPUI 原生绘制的本地笔记应用。百万字文档依然流畅，笔记全部存在你的电脑上，兼容飞书文档格式。支持 macOS 和 Windows。">
+<meta name="description" content="Rust + GPUI 原生绘制的本地笔记应用。百万字文档依然流畅，笔记全部存在你的电脑上，兼容飞书文档格式。支持 macOS、Windows 和 Linux（实验性）。">
 <meta name="theme-color" content="#eef0ee">
 <meta property="og:title" content="quiet.md — 又快又安静的本地笔记">
-<meta property="og:description" content="原生绘制，本地优先，兼容飞书文档格式。macOS 与 Windows 免费下载。">
+<meta property="og:description" content="原生绘制，本地优先，兼容飞书文档格式。macOS、Windows 与 Linux 免费下载。">
 <meta property="og:image" content="https://quiet.md/home.jpg">
 <meta property="og:url" content="https://quiet.md/">
 <meta name="twitter:card" content="summary_large_image">
@@ -82,6 +82,9 @@
   .dl.win { color: var(--ink); background: rgba(255, 255, 255, .78); border: 1px solid rgba(255, 255, 255, .9); backdrop-filter: blur(16px) saturate(1.4); -webkit-backdrop-filter: blur(16px) saturate(1.4); box-shadow: 0 8px 24px -10px rgba(20, 40, 30, .35); }
   .dl.win:hover { background: rgba(255, 255, 255, .92); }
   .dl.win svg { color: #0078d4; }
+  .more { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px 18px; margin: 14px 0 0; font-size: 13px; font-weight: 550; }
+  .more a { color: rgba(255, 255, 255, .95); text-shadow: 0 1px 6px rgba(10, 40, 90, .45); text-decoration: underline; text-decoration-color: rgba(255, 255, 255, .45); text-underline-offset: 3px; }
+  .more a:hover { text-decoration-color: #fff; }
 
   /* The app window rises from the bottom edge; its lower part is cut off by the screen. */
   .stage { flex: 1; min-height: 220px; display: flex; justify-content: center; align-items: flex-start; padding: clamp(24px, 4.5vh, 52px) 16px 0; overflow: hidden; }
@@ -140,7 +143,7 @@
   </nav>
 
   <header>
-    <div class="badge"><b>Beta</b><span data-i18n="badge">开源免费 · macOS 与 Windows</span></div>
+    <div class="badge"><b>Beta</b><span data-i18n="badge">开源免费 · macOS · Windows · Linux</span></div>
     <h1 data-i18n-html="title">又快又安静的<br><span>本地笔记</span></h1>
     <p class="lede" data-i18n="lede">Rust + GPUI 原生绘制，百万字文档依然流畅。笔记全部存在你的电脑上，兼容飞书文档格式。</p>
     <div class="actions">
@@ -153,6 +156,11 @@
         <span><small data-i18n="dlWin">下载 · x64</small><strong>Windows</strong></span>
       </a>
     </div>
+    <p class="more">
+      <a href="https://download.quiet.md/latest/quiet-md-macos-x86_64.zip" data-i18n="dlIntel">Intel Mac 版</a>
+      <a href="https://download.quiet.md/latest/quiet-md-x86_64.AppImage" data-i18n="dlLinux">Linux AppImage（实验性）</a>
+      <a href="https://github.com/s1dashu/quiet-md/releases/latest" data-i18n="dlAll">所有版本与校验值</a>
+    </p>
   </header>
 
   <main class="stage">
@@ -167,18 +175,18 @@
 <script>
 // Static i18n: ?lang= wins, then the saved choice, then the browser language; Simplified Chinese is the markup default.
 const T = {
-  "zh-Hans": { doc: "quiet.md — 又快又安静的本地笔记", desc: "Rust + GPUI 原生绘制的本地笔记应用。百万字文档依然流畅，笔记全部存在你的电脑上，兼容飞书文档格式。支持 macOS 和 Windows。",
-    badge: "开源免费 · macOS 与 Windows", title: "又快又安静的<br><span>本地笔记</span>", lede: "Rust + GPUI 原生绘制，百万字文档依然流畅。笔记全部存在你的电脑上，兼容飞书文档格式。",
-    dlMac: "下载 · Apple Silicon", dlWin: "下载 · x64", alt: "quiet.md 的主页：左侧是文档树，右侧按网格排列所有笔记。" },
-  "zh-Hant": { doc: "quiet.md — 又快又安靜的本地筆記", desc: "以 Rust + GPUI 原生繪製的本地筆記應用。百萬字文件依然流暢，筆記全部存在你的電腦上，相容飛書文件格式。支援 macOS 與 Windows。",
-    badge: "開源免費 · macOS 與 Windows", title: "又快又安靜的<br><span>本地筆記</span>", lede: "Rust + GPUI 原生繪製，百萬字文件依然流暢。筆記全部存在你的電腦上，相容飛書文件格式。",
-    dlMac: "下載 · Apple Silicon", dlWin: "下載 · x64", alt: "quiet.md 的首頁：左側是文件樹，右側以網格排列所有筆記。" },
-  en: { doc: "quiet.md — Fast, quiet, local notes", desc: "A native notes app drawn with Rust + GPUI. Smooth even with million-character documents, your notes stay on your computer, and it reads and writes Feishu (Lark) docs. For macOS and Windows.",
-    badge: "Free & open source · macOS and Windows", title: "Fast, quiet<br><span>local notes</span>", lede: "Drawn natively with Rust + GPUI, smooth even with million-character documents. Your notes stay on your computer, compatible with Feishu (Lark) docs.",
-    dlMac: "Download · Apple Silicon", dlWin: "Download · x64", alt: "The quiet.md home screen: a document tree on the left and all notes in a grid on the right." },
-  ja: { doc: "quiet.md — 速くて静かなローカルノート", desc: "Rust + GPUI でネイティブ描画するノートアプリ。100万字の文書でもなめらかで、ノートはすべてあなたのPCに保存。Feishu（Lark）ドキュメント形式に対応。macOS と Windows に対応。",
-    badge: "無料・オープンソース · macOS と Windows", title: "速くて静かな<br><span>ローカルノート</span>", lede: "Rust + GPUI によるネイティブ描画で、100万字の文書もなめらか。ノートはすべてあなたのPCに保存され、Feishu（Lark）ドキュメント形式に対応します。",
-    dlMac: "ダウンロード · Apple Silicon", dlWin: "ダウンロード · x64", alt: "quiet.md のホーム画面：左にドキュメントツリー、右にすべてのノートをグリッド表示。" },
+  "zh-Hans": { doc: "quiet.md — 又快又安静的本地笔记", desc: "Rust + GPUI 原生绘制的本地笔记应用。百万字文档依然流畅，笔记全部存在你的电脑上，兼容飞书文档格式。支持 macOS、Windows 和 Linux（实验性）。",
+    badge: "开源免费 · macOS · Windows · Linux", title: "又快又安静的<br><span>本地笔记</span>", lede: "Rust + GPUI 原生绘制，百万字文档依然流畅。笔记全部存在你的电脑上，兼容飞书文档格式。",
+    dlMac: "下载 · Apple Silicon", dlWin: "下载 · x64", dlIntel: "Intel Mac 版", dlLinux: "Linux AppImage（实验性）", dlAll: "所有版本与校验值", alt: "quiet.md 的主页：左侧是文档树，右侧按网格排列所有笔记。" },
+  "zh-Hant": { doc: "quiet.md — 又快又安靜的本地筆記", desc: "以 Rust + GPUI 原生繪製的本地筆記應用。百萬字文件依然流暢，筆記全部存在你的電腦上，相容飛書文件格式。支援 macOS、Windows 與 Linux（實驗性）。",
+    badge: "開源免費 · macOS · Windows · Linux", title: "又快又安靜的<br><span>本地筆記</span>", lede: "Rust + GPUI 原生繪製，百萬字文件依然流暢。筆記全部存在你的電腦上，相容飛書文件格式。",
+    dlMac: "下載 · Apple Silicon", dlWin: "下載 · x64", dlIntel: "Intel Mac 版", dlLinux: "Linux AppImage（實驗性）", dlAll: "所有版本與校驗值", alt: "quiet.md 的首頁：左側是文件樹，右側以網格排列所有筆記。" },
+  en: { doc: "quiet.md — Fast, quiet, local notes", desc: "A native notes app drawn with Rust + GPUI. Smooth even with million-character documents, your notes stay on your computer, and it reads and writes Feishu (Lark) docs. For macOS, Windows and Linux (experimental).",
+    badge: "Free & open source · macOS · Windows · Linux", title: "Fast, quiet<br><span>local notes</span>", lede: "Drawn natively with Rust + GPUI, smooth even with million-character documents. Your notes stay on your computer, compatible with Feishu (Lark) docs.",
+    dlMac: "Download · Apple Silicon", dlWin: "Download · x64", dlIntel: "Intel Mac", dlLinux: "Linux AppImage (experimental)", dlAll: "All releases & checksums", alt: "The quiet.md home screen: a document tree on the left and all notes in a grid on the right." },
+  ja: { doc: "quiet.md — 速くて静かなローカルノート", desc: "Rust + GPUI でネイティブ描画するノートアプリ。100万字の文書でもなめらかで、ノートはすべてあなたのPCに保存。Feishu（Lark）ドキュメント形式に対応。macOS、Windows、Linux（試験的）に対応。",
+    badge: "無料・オープンソース · macOS · Windows · Linux", title: "速くて静かな<br><span>ローカルノート</span>", lede: "Rust + GPUI によるネイティブ描画で、100万字の文書もなめらか。ノートはすべてあなたのPCに保存され、Feishu（Lark）ドキュメント形式に対応します。",
+    dlMac: "ダウンロード · Apple Silicon", dlWin: "ダウンロード · x64", dlIntel: "Intel Mac 版", dlLinux: "Linux AppImage（試験的）", dlAll: "すべてのリリースとチェックサム", alt: "quiet.md のホーム画面：左にドキュメントツリー、右にすべてのノートをグリッド表示。" },
 };
 function detect() {
   const q = new URLSearchParams(location.search).get("lang");
