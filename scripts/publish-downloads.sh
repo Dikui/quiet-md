@@ -35,6 +35,7 @@ for file in "$@"; do
   name=$(basename "$file")
   case "$name" in
     quiet-md-*-macos-arm64.zip) platform=macos-arm64; latest=quiet-md-macos-arm64.zip; type=application/zip ;;
+    quiet-md-*-macos-x86_64.zip) platform=macos-x86_64; latest=quiet-md-macos-x86_64.zip; type=application/zip ;;
     quiet-md-*-windows-x64-setup.exe) platform=windows-x64; latest=quiet-md-windows-x64-setup.exe; type=application/vnd.microsoft.portable-executable ;;
     *) echo "Unrecognised package name: $name" >&2; exit 1 ;;
   esac
