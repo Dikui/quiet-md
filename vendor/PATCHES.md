@@ -37,6 +37,10 @@ diff -ru $R/taffy-0.9.0/src vendor/taffy/src
 | 17 | `elements/div.rs` | `paint_scroll_listener`：只在一个方向上可滚动的容器，只接收偏向这个方向的滚动（横向量大于竖向量才横滚，反之才竖滚）。原来竖向滚轮在只能横滚的容器上会被转成横滚，触控板竖滑带的少量横向分量也会照单全收；原有的方向锁只在两个方向都有量时才生效，单向容器另一方向恒为 0，所以从不触发 | 竖着滚动经过宽表格时，表格不再跟着左右滑动；在表格上横向滑动仍然能横滚 |
 
 | 18 | `platform/linux/wayland/client.rs`、`platform/linux/x11/client.rs` | 外观变化时先复制窗口句柄，释放 client 的 RefCell 借用后再触发窗口回调 | 避免回调重新访问平台、更新菜单时触发重复借用 panic |
+| 19 | `platform/mac/metal_renderer.rs`、`platform/windows/directx_renderer.rs` | 画路径用的两张整窗纹理（中间纹理和 4× MSAA 纹理）改为某一帧有路径时才创建，后续无路径帧距最后使用超过 1 秒时释放；窗口尺寸变化时丢掉，下次用到再按新尺寸建。Apple GPU 上 MSAA 纹理用 `Memoryless`（采样只在片上 tile 内存里，渲染过程里清空、只存 resolve 结果） | 原来每个窗口常驻这两张纹理，2560×1600 时约 80MB；路径只用于连续圆角、进度波浪和提示箭头，编辑器里平时一条都不画。抗锯齿不变 |
+| 20 | `elements/img.rs`、`elements/image_cache.rs` | 图片缓存增加不触发加载的 `peek`；显式尺寸图片可选择延迟到可见区域绘制时才解码 | 卡片裁剪范围之外的图片不再预先解码；原始像素、尺寸和动图播放保持不变 |
+| 21 | `platform/mac/metal_atlas.rs` | 删除图片时立即移除 tile 索引，再递减所属纹理的引用计数 | 避免共享纹理仍被使用时残留旧索引，导致重复删除或复用失效 tile |
+
 
 ## taffy 0.9.0
 

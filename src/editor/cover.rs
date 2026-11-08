@@ -10,6 +10,7 @@ use super::view::{Editor, EditorEvent, Menu};
 use crate::model::Cover;
 use crate::editor_theme::{self as theme, Theme, craft};
 use crate::editor_ui::{ROW_RADIUS, TipExt, icon, menu_glyph, menu_row, panel, popover};
+use super::image::PictureExt;
 use gpui::{prelude::FluentBuilder, *};
 use std::cell::Cell;
 use std::rc::Rc;
@@ -364,7 +365,7 @@ impl Editor {
         self.cover_ui.geo.set(dims.map(|(iw, ih)| (iw, ih, cw, ch)));
         let image = path.zip(dims).map(|(p, (iw, ih))| {
             let g = geometry(iw, ih, cw, ch, rx, ry);
-            img(p).absolute().left(px(g.ml)).top(px(g.mt)).w(px(g.w)).h(px(g.h)).object_fit(ObjectFit::Fill)
+            img(p).doc_picture().absolute().left(px(g.ml)).top(px(g.mt)).w(px(g.w)).h(px(g.h)).object_fit(ObjectFit::Fill)
         });
         let menu_open = matches!(self.menu, Some(Menu::CoverEdit | Menu::CoverPick { .. }));
         let record = self.cover_ui.edit_bounds.clone();

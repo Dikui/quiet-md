@@ -14,6 +14,7 @@ use crate::settings::display_title;
 use crate::model::BlockKind;
 use crate::search::doc_icon;
 use crate::store::Entry;
+use crate::editor::image::PictureExt;
 use crate::theme::{self, Theme};
 use crate::trash::{empty_state, list_header_text, list_line, menu_label, page_header, row_hover};
 use crate::ui::{ROW_RADIUS, TipExt, icon, menu_glyph, menu_row, popover, ui_text};
@@ -153,7 +154,7 @@ fn thumb_block_in(b: &crate::model::Block, depth: usize, inherited: Hsla, quote:
             let media = div().relative().flex_none().w_full().max_w_full().overflow_hidden().when_some(*width, |d, w| d.w(px(w * s)))
                 .map(|mut d| { d.style().aspect_ratio = Some(ratio); d });
             node = node.child(if let Some(path) = path {
-                media.child(img(path).absolute().inset_0().size_full().min_w_0().min_h_0().rounded(px(bs::RADIUS * s)).object_fit(ObjectFit::Contain)).into_any_element()
+                media.child(img(path).doc_picture().absolute().inset_0().size_full().min_w_0().min_h_0().rounded(px(bs::RADIUS * s)).object_fit(ObjectFit::Contain)).into_any_element()
             } else {
                 media.rounded(px(bs::RADIUS * s)).bg(bs::code_surface()).flex().items_center().justify_center().child(icon("image-broken", 24. * s, Theme::text_disabled())).into_any_element()
             });
@@ -311,7 +312,7 @@ pub struct Home {
     sort: HomeSort,
     folders_first: bool,
     pub sort_menu: bool,
-    thumbs: RefCell<HashMap<String, (u64, Thumb)>>,
+    thumbs: RefCell<HashMap<String, (u64, Thumb, std::time::Instant)>>,
     /// Last-frame bounds of the controls the popovers hang from.
     anchors: Rc<RefCell<HashMap<&'static str, Bounds<Pixels>>>>,
     /// Folder cards and dragging into them (`home_folder.rs`).
@@ -469,8 +470,8 @@ impl Workspace {
         crate::settings::feishu().hash(&mut stamp);
         for child in &children { (&child.id, &child.title, &child.icon).hash(&mut stamp); }
         let stamp = stamp.finish();
-        if let Some((m, t)) = self.home.thumbs.borrow().get(&e.id)
-            && *m == stamp { return t.clone(); }
+        if let Some((m, t, used)) = self.home.thumbs.borrow_mut().get_mut(&e.id)
+            && *m == stamp { *used = std::time::Instant::now(); return t.clone(); }
         // The derived rows exist only in this preview tree and never enter the editor/store.
         fn subpages(blocks: &mut [crate::model::Block], entries: &[&Entry], budget: &mut usize) {
             for b in blocks {
@@ -493,7 +494,13 @@ impl Workspace {
         }).unwrap_or_default();
         subpages(&mut blocks, &children, &mut budget);
         let t: Thumb = Rc::new(ThumbContent { blocks, eqnos, cover });
-        self.home.thumbs.borrow_mut().insert(e.id.clone(), (stamp, t.clone()));
+        let mut thumbs = self.home.thumbs.borrow_mut();
+        // Keep recent previews warm without retaining every document ever visited.
+        if thumbs.len() >= 128 && !thumbs.contains_key(&e.id) {
+            let oldest = thumbs.iter().min_by_key(|(_, (_, _, used))| *used).map(|(id, _)| id.clone());
+            if let Some(id) = oldest { thumbs.remove(&id); }
+        }
+        thumbs.insert(e.id.clone(), (stamp, t.clone(), std::time::Instant::now()));
         t
     }
 
@@ -901,7 +908,7 @@ impl Workspace {
                             cx.notify();
                         }),
                     ))
-                    .when_some(cover, |d, path| d.child(img(path).absolute().inset_0().size_full().object_fit(ObjectFit::Fill)))
+                    .when_some(cover, |d, path| d.child(img(path).doc_picture().absolute().inset_0().size_full().object_fit(ObjectFit::Fill)))
                     .child(crate::ui::continuous_page(20. - frame).size_full().overflow_hidden().child(page.relative()))
                     .child(crate::ui::continuous_corner_mask(20., Theme::bg_body()))
                     .when_some(check, |d, c| d.child(div().absolute().top(px(12.)).left(px(12.)).child(c)))
