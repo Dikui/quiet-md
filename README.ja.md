@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://github.com/s1dashu/quiet-md/releases/latest"><img src="https://img.shields.io/github/v/release/s1dashu/quiet-md?label=release&color=2f6feb" alt="最新リリース"></a>
   <a href="https://github.com/s1dashu/quiet-md/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/s1dashu/quiet-md/ci.yml?branch=main&label=CI" alt="CI のステータス"></a>
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey" alt="macOS と Windows">
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey" alt="macOS、Windows、Linux">
   <img src="https://img.shields.io/badge/built%20with-Rust%20%2B%20GPUI-dea584?logo=rust" alt="Rust と GPUI で構築">
   <a href="LICENSE"><img src="https://img.shields.io/github/license/s1dashu/quiet-md?color=green" alt="MIT ライセンス"></a>
   <img src="https://img.shields.io/badge/status-beta-orange" alt="ベータ版">
@@ -22,6 +22,8 @@
   <a href="https://download.quiet.md/latest/quiet-md-macos-arm64.zip"><img src="docs/images/download-macos.svg" height="56" alt="macOS 版をダウンロード"></a>
   &nbsp;
   <a href="https://download.quiet.md/latest/quiet-md-windows-x64-setup.exe"><img src="docs/images/download-windows.svg" height="56" alt="Windows 版をダウンロード"></a>
+  &nbsp;
+  <a href="https://download.quiet.md/latest/quiet-md-x86_64.AppImage"><img src="docs/images/download-linux.svg" height="56" alt="Linux 版をダウンロード"></a>
 </p>
 
 <p align="center">
@@ -53,17 +55,22 @@
   <a href="https://download.quiet.md/latest/quiet-md-macos-arm64.zip"><img src="docs/images/download-macos.svg" height="56" alt="macOS 版をダウンロード"></a>
   &nbsp;
   <a href="https://download.quiet.md/latest/quiet-md-windows-x64-setup.exe"><img src="docs/images/download-windows.svg" height="56" alt="Windows 版をダウンロード"></a>
+  &nbsp;
+  <a href="https://download.quiet.md/latest/quiet-md-x86_64.AppImage"><img src="docs/images/download-linux.svg" height="56" alt="Linux 版をダウンロード"></a>
 </p>
 
-| プラットフォーム | 要件 |
-|---|---|
-| **macOS**（Apple シリコン） | macOS 13 以降 |
-| **Windows**（x64） | Windows 10 バージョン 2004 以降 |
+| プラットフォーム | パッケージ | 要件 |
+|---|---|---|
+| **macOS**（Apple シリコン） | [quiet-md-macos-arm64.zip](https://download.quiet.md/latest/quiet-md-macos-arm64.zip) | macOS 13 以降 |
+| **Windows**（x64） | [quiet-md-windows-x64-setup.exe](https://download.quiet.md/latest/quiet-md-windows-x64-setup.exe) | Windows 10 バージョン 2004 以降 |
+| **Linux**（x86_64、試験的） | [quiet-md-x86_64.AppImage](https://download.quiet.md/latest/quiet-md-x86_64.AppImage) | glibc 2.35 以降（Ubuntu 22.04 以降） |
+| **macOS**（Intel） | [quiet-md-macos-x86_64.zip](https://download.quiet.md/latest/quiet-md-macos-x86_64.zip) | macOS 13 以降 |
 
 - **macOS**: 展開して、`quiet.md.app` をアプリケーションフォルダーにドラッグします。アプリは Apple によって署名・公証されています。
 - **Windows**: インストーラーを実行します。デフォルトでは現在のユーザーだけにインストールされ、アンインストールしてもノートが削除されることはありません。初回の起動時に SmartScreen が表示された場合は、**詳細情報 → 実行** をクリックしてください。
+- **Linux**（試験的）: `chmod +x quiet-md-*.AppImage` を実行してから起動します。FUSE がない場合は `--appimage-extract-and-run` を付けてください。更新は手動です。現在の対話的なテストは Wayland 上の Omarchy のみです。詳しくは [Linux の説明](CONTRIBUTING.md#linux-experimental)を参照してください。
 
-[Quiet.md](https://quiet.md/?lang=en) からもダウンロードできます。すべてのリリースとその SHA-256 チェックサムは [GitHub Releases](https://github.com/s1dashu/quiet-md/releases) にあります。Intel Mac 向けのビルドはまだありませんが、[ソースからビルド](CONTRIBUTING.md#building-from-source)できます。
+[Quiet.md](https://quiet.md/?lang=en) からもダウンロードできます。すべてのリリースとその SHA-256 チェックサムは [GitHub Releases](https://github.com/s1dashu/quiet-md/releases) にあります。
 
 初回の起動時に、Quiet.md は空のライブラリに **Getting started** ガイドを入れます。主な機能を 10 分で紹介するツアーです。既存のノートが上書きされることはありません。
 
@@ -105,7 +112,7 @@ Quiet.md の開発に協力してくださったすべての方に感謝しま�
 
 ## 最近の更新
 
-- **0.1.8**（公開予定）: ローカル Markdown の直接編集、`.md` を保持するフォルダーのインポート、階層フォルダーとドラッグ操作・取り消しに対応。画像とプレビューのメモリ使用量を削減し、表の列幅変更とメニューを改善。初回起動時は対応するシステム言語を選択。実験的な Linux AppImage パッケージを追加。
+- **0.1.8**（11 月 9 日）: ローカル Markdown の直接編集、`.md` を保持するフォルダーのインポート、階層フォルダーとドラッグ操作・取り消しに対応。画像とプレビューのメモリ使用量を削減し、表の列幅変更とメニューを改善。初回起動時は対応するシステム言語を選択。実験的な Linux AppImage パッケージを追加。
 - **0.1.7**（11 月 6 日）: 複数ウインドウの保存、競合からの復元、ファイルへの書き込みを改善しました。エクスポート時に読み取れるファイルの範囲を制限し、Markdown のインライン添付ファイルを保持します。Windows の小狼毫（Weasel）入力時に文字が削除される問題を修正しました。
 - **0.1.6**（11 月 6 日）: ウインドウ切り替えと入力を改善し、表の最大幅を広げました。連続入力中も定期的に保存します。macOS では Option+Space でクイックノートを開けます。Windows では画像の貼り付け、PDF エクスポート、印刷に対応し、単語削除の動作を修正しました。
 - **0.1.5**（11 月 5 日）: アプリの名前が Quiet.md になりました。ライブラリとノートは元の場所のままです。
