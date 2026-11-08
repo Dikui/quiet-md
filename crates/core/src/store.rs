@@ -1183,6 +1183,29 @@ mod tests {
     }
 
     #[test]
+    /// Undoing a move checks what it moves, not unrelated stale entries.
+    fn markdown_moves_undo() {
+        let lib = Lib::new("md-undo");
+        let mut s = lib.open();
+        let folder = s.create_folder("f", None).unwrap();
+        let id = s.create_markdown(&crate::markdown::parse_file("x\n", "Note", None), "").unwrap();
+        // A page left by another build whose parent page is gone (no file, no folder).
+        let stale = s.create_from(&doc("old")).unwrap();
+        let ghost = uuid::Uuid::new_v4().to_string();
+        s.index.insert(ghost.clone(), Meta::default());
+        s.index.get_mut(&stale).unwrap().parent = Some(ghost);
+        s.save_index().unwrap();
+        s.list();
+        let journal = s.track_file_changes();
+        s.move_in_tree(&id, Some(&folder), None).unwrap();
+        let changes = journal.take();
+        s.apply_file_history(&changes, false).unwrap();
+        assert!(s.index[&id].parent.is_none());
+        s.apply_file_history(&changes, true).unwrap();
+        assert_eq!(s.index[&id].parent.as_deref(), Some(folder.as_str()));
+    }
+
+    #[test]
     fn failed_lock_never_writes() {
         let lib = Lib::new("lock-failure");
         let mut s = lib.open();

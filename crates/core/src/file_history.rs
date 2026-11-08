@@ -151,8 +151,11 @@ impl Store {
                 _ => {},
             }
         }
-        // Validate the resulting graph before touching files (including external changes).
-        for (id, meta) in &index {
+        // Validate what this gesture moves before touching files (including
+        // external changes). Other entries are not its business: an old page
+        // whose parent is gone already shows at the top level, and must not
+        // block every undo in the library.
+        for (id, meta) in changes.iter().filter_map(|c| index.get(&c.id).map(|m| (&c.id, m))) {
             let mut seen = std::collections::HashSet::from([id.as_str()]);
             let mut parent = meta.parent.as_deref();
             while let Some(p) = parent {
