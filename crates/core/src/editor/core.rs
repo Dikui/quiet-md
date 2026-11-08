@@ -646,6 +646,26 @@ impl Core {
         }
     }
 
+    pub fn receive_file_title(&mut self, title: &str) {
+        if self.doc.title.text == title { return; }
+        let rename = |doc: &mut Document, sel: &mut Selection| {
+            doc.title = RichText::plain(title);
+            for pos in [&mut sel.anchor, &mut sel.head] {
+                if pos.block == TITLE {
+                    pos.offset = title.grapheme_indices(true).map(|(i, _)| i).chain(std::iter::once(title.len()))
+                        .take_while(|i| *i <= pos.offset).last().unwrap_or(0);
+                }
+            }
+        };
+        rename(&mut self.doc, &mut self.sel);
+        for snapshot in self.undo.iter_mut().chain(self.redo.iter_mut()) {
+            let snapshot = std::sync::Arc::make_mut(snapshot);
+            rename(&mut snapshot.doc, &mut snapshot.sel);
+            snapshot.bytes = doc_bytes(&snapshot.doc);
+        }
+        self.last_edit = None; self.generation += 1;
+    }
+
     pub fn undo(&mut self) -> bool {
         let Some(s) = self.undo.pop_back() else { return false };
         self.generation += 1;
@@ -3277,6 +3297,22 @@ mod tests {
 
     fn id(c: &Core, n: usize) -> BlockId {
         c.units()[n].id
+    }
+
+    #[test]
+    fn file_title_keeps_current_and_history_grapheme_boundaries() {
+        for title in ["中文", "👩‍💻笔记", "e\u{301}cole"] {
+            let mut c = doc("<title>abc</title><p>body</p>");
+            c.sel = Selection::caret(Pos::new(TITLE, 1));
+            c.checkpoint(EditKind::Other);
+            c.receive_file_title(title);
+            assert_eq!(c.sel.head.offset, 0);
+            assert_eq!(c.undo.back().unwrap().sel.head.offset, 0);
+            c.backspace();
+            assert_eq!(c.doc.title.text, title);
+            assert!(c.undo());
+            assert_eq!(c.doc.title.text, title);
+        }
     }
 
     #[test]

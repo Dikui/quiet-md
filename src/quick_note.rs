@@ -20,7 +20,7 @@ pub fn used(_: &str, _: &mut App) {}
 #[cfg(target_os = "macos")]
 pub fn open_last(cx: &mut App) {
     let Some(mut store) = cx.try_global::<crate::shared_store::SharedStore>().cloned() else { return };
-    let entries = store.list();
+    let entries: Vec<_> = store.list().into_iter().filter(|e| e.meta.folder.is_none()).collect();
     let id = cx.try_global::<LastDocument>().and_then(|s| s.0.clone()).filter(|id| entries.iter().any(|e| &e.id == id))
         .or_else(|| entries.iter().max_by_key(|e| e.meta.opened).map(|e| e.id.clone()));
     let Some(id) = id else { return };

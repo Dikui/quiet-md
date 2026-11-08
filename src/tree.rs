@@ -23,7 +23,7 @@ pub(crate) struct Tree<'a> {
 
 impl<'a> Tree<'a> {
     pub fn new(entries: &'a [Entry]) -> Self {
-        let ids: HashSet<&str> = entries.iter().map(|e| e.id.as_str()).collect();
+        let ids: HashSet<&str> = entries.iter().filter(|e| e.meta.folder.is_some()).map(|e| e.id.as_str()).collect();
         let parent = |e: &'a Entry| e.meta.parent.as_deref().filter(|p| ids.contains(p) && *p != e.id);
         let mut roots: Vec<&Entry> = vec![];
         let mut kids: HashMap<&str, Vec<&Entry>> = HashMap::new();
@@ -50,8 +50,11 @@ impl<'a> Tree<'a> {
                 roots.push(e);
             }
         }
+        // `Meta::place`, then the id: the list is re-read often (each time the
+        // window comes back) and must come out the same every time.
+        roots.sort_by(|a, b| (a.meta.place(), &a.id).cmp(&(b.meta.place(), &b.id)));
         for v in kids.values_mut() {
-            v.sort_by_key(|e| e.meta.sibling_key());
+            v.sort_by(|a, b| (a.meta.place(), &a.id).cmp(&(b.meta.place(), &b.id)));
         }
         Tree { roots, kids }
     }
@@ -61,10 +64,6 @@ impl<'a> Tree<'a> {
             None => &self.roots,
             Some(id) => self.kids.get(id).map_or(&[], |v| v.as_slice()),
         }
-    }
-
-    pub fn has_children(&self, id: &str) -> bool {
-        !self.children(Some(id)).is_empty()
     }
 
     /// Pre-order rows with their depth, descending into pages `open` says yes to.
@@ -131,8 +130,9 @@ impl Workspace {
     pub(crate) fn sync_sub_pages(&mut self, cx: &mut Context<Self>) {
         let (Some(id), Some(ed)) = (self.current.clone(), self.editor.clone()) else { return };
         let pages = Tree::new(&self.entries)
-            .children(Some(&id))
+            .children(self.entries.iter().find(|e| e.id == id).and_then(|e| e.meta.parent.as_deref()))
             .iter()
+            .filter(|e| e.id != id)
             .map(|e| SubPage { id: e.id.clone(), title: e.title.clone(), icon: e.icon.clone() })
             .collect();
         ed.update(cx, |e, cx| e.set_sub_pages(pages, cx));
@@ -141,6 +141,10 @@ impl Workspace {
 
     /// The row "+" → 文档: a new page under `parent`, opened.
     pub fn new_child(&mut self, parent: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let file_before = self.store.track_file_changes();
+        let parent = if self.entries.iter().any(|e| e.id == parent && e.meta.folder.is_some()) { parent.to_string() }
+            else { return; };
+        let parent = parent.as_str();
         let p = parent.to_string();
         if !self.save_before(cx, move |w, window, cx| w.new_child(&p, window, cx)) {
             return;
@@ -155,6 +159,7 @@ impl Workspace {
             }
             Err(e) => self.status = crate::app::SaveStatus::Failed(crate::localized_format!("新建失败：{}", "Could not create document: {}", crate::settings::diagnostic(&e.to_string()))),
         }
+        self.remember_files(file_before, crate::settings::tr("新建文档", "New document"));
         cx.notify();
     }
 
@@ -187,6 +192,8 @@ impl Workspace {
     /// 移动到: hang each page under `target` (`None`: top level), skipping
     /// moves into its own subtree.
     pub(crate) fn move_docs(&mut self, ids: &[String], target: Option<String>, cx: &mut Context<Self>) {
+        let file_before = self.store.track_file_changes();
+        let mut failed = false;
         for id in ids {
             let inside = target.as_ref().is_some_and(|t| Tree::new(&self.entries).subtree(id).contains(t));
             if inside {
@@ -198,7 +205,7 @@ impl Workspace {
                         e.meta = meta;
                     }
                 }
-                Err(e) => self.status = crate::app::SaveStatus::Failed(crate::localized_format!("移动失败：{}", "Could not move document: {}", crate::settings::diagnostic(&e.to_string()))),
+                Err(e) => { failed = true; self.status = crate::app::SaveStatus::Failed(crate::localized_format!("移动失败：{}", "Could not move document: {}", crate::settings::diagnostic(&e.to_string()))); },
             }
         }
         if let Some(t) = &target {
@@ -206,7 +213,9 @@ impl Workspace {
             self.reveal_in_tree(&t.clone());
         }
         self.sync_sub_pages(cx);
-        self.show_toast(crate::settings::text("移动成功"), cx);
+        self.entries = self.store.list(); self.sort();
+        if !failed { self.show_toast(crate::settings::text("移动成功"), cx); }
+        self.remember_files(file_before, crate::settings::tr("移动", "Move"));
         cx.notify();
     }
 
@@ -233,7 +242,7 @@ impl Workspace {
             .border_1()
             .border_color(Theme::line_border())
             .bg(crate::theme::raised(Theme::bg_body()))
-            .child(icon("search", 15., Theme::text_caption()))
+            .child(icon("search", 15., Theme::icon()))
             .child(div().flex_1().min_w_0().ml(px(6.)).flex().child(dlg.search.clone()));
         // The location column reads like a sidebar: a grey surface and
         // a quiet pill for the selected location.
@@ -255,7 +264,7 @@ impl Workspace {
                     .items_center()
                     .rounded(px(9.))
                     .bg(Theme::fill_hover_strong())
-                    .child(icon("library", 15., Theme::text_code()))
+                    .child(icon("library", 15., Theme::icon()))
                     .child(div().ml(px(8.)).text_size(px(13.)).line_height(px(20.)).child(crate::settings::tr("我的文档", "My documents"))),
             );
 
@@ -274,15 +283,16 @@ impl Workspace {
         };
         let title = |t: String| div().ml(px(9.)).flex_1().min_w_0().text_size(px(13.)).line_height(px(20.)).overflow_hidden().whitespace_nowrap().text_ellipsis().child(ui_text(t));
         let page_icon = |e: &Entry| match &e.icon {
+            _ if e.meta.folder.is_some() => icon("folder", 16., Theme::icon()).into_any_element(),
             Some(em) => div().size(px(16.)).flex_none().flex().items_center().justify_center().text_size(px(14.)).child(em.clone()).into_any_element(),
-            None => icon("doc", 16., Theme::text_caption()).into_any_element(),
+            None => icon("doc", 16., Theme::icon()).into_any_element(),
         };
         let mut list = div().id("move-tree").flex_1().min_w_0().px(px(8.)).py(px(12.)).overflow_y_scroll().track_scroll(&dlg.scroll);
         if q.is_empty() {
             list = list.child(
                 row("move-root".into(), dlg.target == Some(None))
                     .pl(px(16.))
-                    .child(icon("library", 16., Theme::text_caption()))
+                    .child(icon("library", 16., Theme::icon()))
                     .child(title(crate::settings::text("我的文档").into()))
                     .on_click(cx.listener(|w, _, _, cx| {
                         if let Some(d) = w.move_dlg.as_mut() {
@@ -292,7 +302,7 @@ impl Workspace {
                     })),
             );
             for (e, depth) in tree.rows(|id| dlg.expanded.contains(id)) {
-                if hidden.contains(&e.id) {
+                if hidden.contains(&e.id) || e.meta.folder.is_none() {
                     continue;
                 }
                 let kids = tree.children(Some(&e.id)).iter().any(|c| !hidden.contains(&c.id));
@@ -311,7 +321,7 @@ impl Workspace {
                                 .rounded(px(5.))
                                 .when(kids, |d| {
                                     d.hover(|s| s.bg(Theme::fill_hover_strong()))
-                                        .child(icon("tree-triangle", 10., theme::c(craft::N500)).when(open, |s| s.with_transformation(Transformation::rotate(radians(std::f32::consts::FRAC_PI_2)))))
+                                        .child(icon("tree-triangle", 10., Theme::icon()).when(open, |s| s.with_transformation(Transformation::rotate(radians(std::f32::consts::FRAC_PI_2)))))
                                         .on_click(cx.listener(move |w, _, _, cx| {
                                             cx.stop_propagation();
                                             if let Some(d) = w.move_dlg.as_mut()
@@ -333,7 +343,7 @@ impl Workspace {
                 );
             }
         } else {
-            let hits: Vec<&Entry> = self.entries.iter().filter(|e| !hidden.contains(&e.id) && display_title(&e.title).to_lowercase().contains(&q)).collect();
+            let hits: Vec<&Entry> = self.entries.iter().filter(|e| e.meta.folder.is_some() && !hidden.contains(&e.id) && display_title(&e.title).to_lowercase().contains(&q)).collect();
             if hits.is_empty() {
                 list = list.child(div().pt(px(80.)).flex().justify_center().text_size(px(13.)).text_color(Theme::text_caption()).child(crate::settings::text("无搜索结果")));
             }

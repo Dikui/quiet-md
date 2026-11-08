@@ -767,8 +767,8 @@ Windows 安装包随附未修改的 Microsoft Visual C++ Runtime `vcruntime140.d
 | 素材 | 许可 |
 |---|---|
 | `assets/editor-icons/`（编辑器与文档里的 195 个图标） | 其中 49 个直接取自 Lucide（ISC，见同目录 `LICENSE-lucide`），其余按同一 24px / 2px 描边规格绘制 |
-| `assets/icons/`（界面外壳的 67 个图标） | Nucleo UI Outline / Fill 18。本项目持有 Nucleo 商业授权，按授权条款「公开源码项目中最多 100 个图标」使用（<https://nucleoapp.com/license>）。**这些图标不在 MIT 范围内**：fork 时请自行确认授权，或换成自己的图标；不得把它们抽出来做成图标库或图标包。 |
-| `assets/icons/folder.svg` | 本项目绘制，MIT；不属于上述 67 个 Nucleo 图标 |
+| `assets/icons/`（界面外壳的 66 个图标） | Nucleo UI Outline / Fill 18。本项目持有 Nucleo 商业授权，按授权条款「公开源码项目中最多 100 个图标」使用（<https://nucleoapp.com/license>）。**这些图标不在 MIT 范围内**：fork 时请自行确认授权，或换成自己的图标；不得把它们抽出来做成图标库或图标包。 |
+| `assets/icons/folder.svg`、`assets/icons/disclosure.svg` | 本项目绘制，MIT；不属于上述 66 个 Nucleo 图标 |
 | `assets/branding/app-icon.png` | 本项目自有 |
 
 ## 封面与插画

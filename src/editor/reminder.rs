@@ -526,7 +526,7 @@ impl Editor {
                 .rounded(px(ROW_RADIUS))
                 .cursor_pointer()
                 .hover(|s| s.bg(Theme::fill_hover_strong()))
-                .child(icon(name, 16., Theme::text_caption()))
+                .child(icon(name, 16., Theme::icon()))
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |e, _, _, cx| {
@@ -623,7 +623,7 @@ impl Editor {
                 .when(!active, |d| d.hover(|s| s.border_color(crate::editor_theme::ca(craft::N1000, 0.16))))
                 .child(track(&self.rm.selects[ix]))
         };
-        let chevron = || div().ml(px(8.)).flex_none().child(icon("chevron-down", 12., Theme::text_caption()));
+        let chevron = || div().ml(px(8.)).flex_none().child(icon("chevron-down", 12., Theme::icon()));
         let time_focused = self.rm.time.read(cx).is_focused(window);
         let time_select = select(0, open == Some(Drop::Time) || time_focused)
             .id("rm-time")

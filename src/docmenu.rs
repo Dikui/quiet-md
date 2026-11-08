@@ -81,6 +81,7 @@ impl Workspace {
 
     /// 创建副本: "<标题> 副本", opened right away.
     pub fn duplicate_doc(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let file_before = self.store.track_file_changes();
         self.close_doc_menu(cx);
         self.row_menu = None;
         if let Some(new) = self.copy_doc(id, cx) {
@@ -88,11 +89,13 @@ impl Workspace {
             self.sort();
             self.open(&new, window, cx);
         }
+        self.remember_files(file_before, crate::settings::tr("创建副本", "Duplicate"));
         cx.notify();
     }
 
     /// Write "<标题> 副本" of `id` to the library; the caller refreshes the list.
     pub(crate) fn copy_doc(&mut self, id: &str, cx: &mut Context<Self>) -> Option<String> {
+        if self.entries.iter().any(|e| e.id == id && e.meta.folder.is_some()) { return self.copy_folder(id, cx); }
         let mut doc = self.doc_of(id, cx)?;
         let title = crate::localized_format!("{} 副本", "{} copy", display_title(&doc.title.text));
         doc.title = crate::model::RichText::plain(title);
@@ -100,6 +103,8 @@ impl Workspace {
         match self.store.create_from(&doc) {
             Ok(new) => {
                 let _ = self.store.set_width(&new, width);
+                let parent = self.entries.iter().find(|e| e.id == id).and_then(|e| e.meta.parent.clone());
+                if let Some(parent) = parent { let _ = self.store.set_parent(&new, Some(&parent)); }
                 Some(new)
             }
             Err(e) => {

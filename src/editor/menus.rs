@@ -19,7 +19,6 @@ pub enum SlashKind {
     Grid,
     Callout,
     Formula,
-    SubPageList,
     Countdown,
     Button,
     File,
@@ -172,13 +171,6 @@ pub const SLASH_ITEMS: &[SlashItem] = &[
         keywords: &["gongshi", "gs", "latex", "formula", "equation", "math"],
     },
     SlashItem { kind: SlashKind::Button, label: "按钮", icon: "button", color: BLUE, group: 1, keywords: &["按钮", "anniu", "an", "button"] },
-    SlashItem {
-        kind: SlashKind::SubPageList,
-        label: "子页面列表",
-        icon: "list-tree", color: BLUE,
-        group: 1,
-        keywords: &["ziyemianliebiao", "zymlb", "子页面", "子文档", "subpage", "catalog", "mulu"],
-    },
     SlashItem {
         kind: SlashKind::Reminder,
         label: "日期提醒",
@@ -378,7 +370,8 @@ mod tests {
         assert_eq!(SLASH_ITEMS[r[0]].label, "表格");
         let r = filter_slash("cy");
         assert!(r.iter().all(|i| SLASH_ITEMS[*i].group == 1));
-        assert_eq!(r.len(), 9);
+        // 子页面列表 left the menu with folders (pages no longer hold pages).
+        assert_eq!(r.len(), 8);
         assert!(filter_slash("zzz").is_empty());
         assert_eq!(SLASH_ITEMS[filter_slash("djs")[0]].label, "倒计时");
         let r = filter_slash("list");

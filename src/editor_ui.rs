@@ -34,4 +34,4 @@ pub fn menu_row(id: impl Into<ElementId>, group: SharedString) -> Stateful<Div> 
 pub fn menu_label(label: impl Into<SharedString>, _group: SharedString, _hover: Hsla) -> Div {
     div().whitespace_nowrap().child(crate::settings::label(label.into()))
 }
-pub fn menu_glyph(name: &str, size: f32, _group: SharedString) -> Svg { icon(name, size, Theme::text_code()) }
+pub fn menu_glyph(name: &str, size: f32, _group: SharedString) -> Svg { icon(name, size, Theme::icon()) }

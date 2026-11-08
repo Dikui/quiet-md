@@ -509,7 +509,7 @@ impl Editor {
             .child(
                 btn("lc-edit")
                     .tip_above(crate::settings::text("编辑链接"), None)
-                    .child(icon("pen-line", 18., Theme::text_code()))
+                    .child(icon("pen-line", 18., Theme::icon()))
                     .on_click(cx.listener(move |e, _, window, cx| {
                         let (b, r) = edit.clone();
                         e.open_link_panel(b, r, false, window, cx);
@@ -518,14 +518,14 @@ impl Editor {
             .child(
                 btn("lc-remove")
                     .tip_above(crate::settings::text("移除链接"), None)
-                    .child(icon("unlink", 18., Theme::text_code()))
+                    .child(icon("unlink", 18., Theme::icon()))
                     .on_click(cx.listener(move |e, _, window, cx| e.remove_link(remove.clone(), window, cx))),
             )
             .child(div().ml(px(8.)).w(px(1.)).h(px(18.)).flex_none().bg(Theme::line_divider()))
             .child(
                 btn("lc-more")
                     .when(more, |d| d.bg(Theme::fill_hover_strong()))
-                    .child(icon("layout-grid", 18., Theme::text_code()))
+                    .child(icon("layout-grid", 18., Theme::icon()))
                     .on_hover(cx.listener(|e, h: &bool, _, cx| e.card_over(1, *h, cx)))
                     .on_click(cx.listener(|e, _, _, cx| {
                         e.link_ui.more = true;

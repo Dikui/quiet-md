@@ -176,7 +176,7 @@ impl Workspace {
                                 .text_size(px(13.))
                                 .line_height(px(20.))
                                 .text_color(Theme::text())
-                                .child(icon("list", 15., Theme::text_code()))
+                                .child(icon("list", 15., Theme::icon()))
                                 .child(crate::settings::text("信息与数据")),
                         ),
                     )

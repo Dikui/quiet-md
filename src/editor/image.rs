@@ -348,7 +348,7 @@ fn error_el(w: f32, h: f32, missing: bool, blocked: bool, border: Hsla, retry: O
         .overflow_hidden()
         .text_color(Theme::text_caption())
         .font_family(theme::UI_FONT)
-        .when(w > 120. && h > 162., |d| d.child(icon("image-broken", 56., Theme::text_placeholder()).mb(px(8.))))
+        .when(w > 120. && h > 162., |d| d.child(icon("image-broken", 56., Theme::icon()).mb(px(8.))))
         .children(body)
         .into_any_element()
 }
@@ -1022,7 +1022,7 @@ impl Editor {
                 btn("itb-crop")
                     .when(cropping, |d| d.bg(Theme::fill_turninto_active()))
                     .tip_above(if cropping { crate::settings::text("保存裁剪") } else { crate::settings::text("裁剪") }, None)
-                    .child(icon("crop", 18., if cropping { Theme::primary() } else { Theme::text_code() }))
+                    .child(icon("crop", 18., if cropping { Theme::primary() } else { Theme::icon() }))
                     .on_mouse_down(
                         MouseButton::Left,
                         act(|e, id, window, cx| {
@@ -1041,7 +1041,7 @@ impl Editor {
                 bar = bar.child(
                     btn("itb-reset")
                         .tip_above(crate::settings::text("重置图片"), None)
-                        .child(icon("image-reset", 18., Theme::text_code()))
+                        .child(icon("image-reset", 18., Theme::icon()))
                         .on_mouse_down(MouseButton::Left, act(|e, id, _, cx| e.reset_crop(id, cx))),
                 );
                 w += 24.;
@@ -1055,7 +1055,7 @@ impl Editor {
             .child(
                 btn("itb-caption")
                     .tip_above(if has_caption { crate::settings::text("编辑描述") } else { crate::settings::text("添加描述") }, None)
-                    .child(icon("caption", 18., Theme::text_code()))
+                    .child(icon("caption", 18., Theme::icon()))
                     .on_mouse_down(MouseButton::Left, act(|e, id, window, cx| e.edit_caption(id, window, cx))),
             )
             .child(sep());
@@ -1071,7 +1071,7 @@ impl Editor {
                 btn(key)
                     .when(on, |d| d.bg(Theme::fill_turninto_active()))
                     .tip_above(tip, None)
-                    .child(icon(ic, 18., if on { Theme::primary() } else { Theme::text_code() }))
+                    .child(icon(ic, 18., if on { Theme::primary() } else { Theme::icon() }))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |e, _, window, cx| {

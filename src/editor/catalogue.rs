@@ -307,7 +307,7 @@ impl Editor {
             .hover(|s| s.bg(Theme::fill_hover_strong()))
             .active(|s| s.bg(theme::ta(31, 35, 41, 0.2)))
             .child(
-                icon(if pinned { "catalogue-collapse" } else { "catalogue-list" }, 18., Theme::text_caption())
+                icon(if pinned { "catalogue-collapse" } else { "catalogue-list" }, 18., Theme::icon())
                     .group_hover("cat-pin", |s| s.text_color(theme::c(craft::old::B500))),
             )
             .tip_label(if pinned { crate::settings::text("收起目录") } else { crate::settings::text("展开目录") }.into(), TipSide::Above)
@@ -415,7 +415,7 @@ impl Editor {
                                             .size(px(10.))
                                             .when(!folded, |d| d.opacity(0.).group_hover(group.clone(), |s| s.opacity(1.)))
                                             .child(
-                                                icon(if folded { "triangle-right" } else { "triangle-down" }, 10., Theme::text_placeholder())
+                                                icon(if folded { "triangle-right" } else { "triangle-down" }, 10., Theme::icon())
                                                     .hover(|s| s.text_color(Theme::text())),
                                             ),
                                     )

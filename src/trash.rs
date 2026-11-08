@@ -24,6 +24,11 @@ fn remaining(deleted: u64) -> String {
 /// the same place: a 17pt semibold view title, and the open-sidebar
 /// button when the sidebar is hidden.
 pub(crate) fn page_header(ws: &Workspace, title: &'static str, left: f32, cx: &mut Context<Workspace>) -> Stateful<Div> {
+    page_header_with(ws, div().text_size(px(17.)).line_height(px(24.)).font_weight(FontWeight::SEMIBOLD).child(crate::settings::label(title)), left, cx)
+}
+
+/// `page_header` with any title element (a folder page puts its breadcrumbs there).
+pub(crate) fn page_header_with(ws: &Workspace, title: impl IntoElement, left: f32, cx: &mut Context<Workspace>) -> Stateful<Div> {
     div()
         .id("page-header")
         .h(px(crate::app::HEADER_H))
@@ -58,7 +63,7 @@ pub(crate) fn page_header(ws: &Workspace, title: &'static str, left: f32, cx: &m
                     })),
             )
         })
-        .child(div().text_size(px(17.)).line_height(px(24.)).font_weight(FontWeight::SEMIBOLD).child(crate::settings::label(title)))
+        .child(title)
         .child(div().flex_1())
 }
 
@@ -89,7 +94,7 @@ impl Workspace {
         let empty = (!self.trash.is_empty()).then(|| div().id("trash-empty").no_drag().flex_none().mr(px(8.)).h(px(28.)).px(px(10.)).flex().items_center().gap(px(6.))
             .rounded(px(9.)).cursor_pointer().hover(|s| s.bg(Theme::fill_hover())).active(|s| s.bg(Theme::fill_pressed()))
             .text_size(px(13.)).line_height(px(20.)).text_color(Theme::text())
-            .child(icon("bin", 14., Theme::text_code())).child(crate::settings::text("清空回收站"))
+            .child(icon("bin", 14., Theme::icon())).child(crate::settings::text("清空回收站"))
             .on_click(cx.listener(|w, _, _, cx| { w.trash_menu = None; w.confirm = Some(Confirm::EmptyTrash); cx.notify(); })));
         let header = page_header(self, "回收站", 26., cx).children(empty).child(
             crate::ui::header_icon("trash-search", "search")
@@ -139,7 +144,7 @@ impl Workspace {
                 .cursor_pointer()
                 .hover(|s| s.bg(Theme::fill_hover_strong()))
                 .when(menu_open, |d| d.bg(Theme::fill_hover_strong()))
-                .child(icon("ellipsis", 16., Theme::text_caption()))
+                .child(icon("ellipsis", 16., Theme::icon()))
                 .on_click(cx.listener(move |w, ev: &ClickEvent, _, cx| {
                     cx.stop_propagation();
                     let p = ev.position();
@@ -183,7 +188,7 @@ impl Workspace {
                             .flex()
                             .items_center()
                             .gap(px(4.))
-                            .child(icon("library", 16., Theme::text_placeholder()))
+                            .child(icon("library", 16., Theme::icon()))
                             .child(div().min_w_0().text_size(px(13.)).text_color(Theme::text_caption()).overflow_hidden().whitespace_nowrap().text_ellipsis().child(ui_text(self.trash_location(t)))),
                     )
                     .child(div().w(px(168.)).flex_none().pl(px(20.)).text_size(px(13.)).text_color(Theme::text_caption()).child(remaining(t.deleted)))
@@ -201,7 +206,7 @@ impl Workspace {
             let g = SharedString::from(key);
             crate::ui::menu_row(key, g.clone())
                 .text_color(color)
-                .child(icon(ic, 16., if color == Theme::text() { Theme::text_code() } else { color }).group_hover(g.clone(), |s| s.text_color(gpui::white())))
+                .child(icon(ic, 16., if color == Theme::icon() { Theme::icon() } else { color }).group_hover(g.clone(), |s| s.text_color(gpui::white())))
                 .child(menu_label(label, g, gpui::white()))
         };
         let (a, b) = (id.clone(), id);
@@ -234,6 +239,7 @@ impl Workspace {
     }
 
     fn restore_doc(&mut self, id: &str, cx: &mut Context<Self>) {
+        let file_before = self.store.track_file_changes();
         match self.store.restore(id) {
             Ok(moved) => {
                 self.show_toast(if moved { crate::settings::text("恢复成功。部分文档由于原位置不存在，已恢复到“我的文档”") } else { crate::settings::text("恢复成功") }, cx);
@@ -250,6 +256,7 @@ impl Workspace {
         self.sync_sub_pages(cx);
         self.trash = self.store.list_trash();
         self.show_store_warnings(cx);
+        self.remember_files(file_before, crate::settings::tr("恢复", "Restore"));
     }
 
     fn purge_doc(&mut self, id: &str, cx: &mut Context<Self>) {

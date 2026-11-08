@@ -19,7 +19,7 @@ const ROW: f32 = 4.;
 fn page_icon(emoji: &Option<String>) -> AnyElement {
     match emoji {
         Some(e) => div().text_size(px(16.)).line_height(px(18.)).child(e.clone()).into_any_element(),
-        None => icon("doc", 16., Theme::text_caption()).into_any_element(),
+        None => icon("doc", 16., Theme::icon()).into_any_element(),
     }
 }
 
@@ -71,7 +71,7 @@ impl R<'_> {
             });
         if ed.sub_pages.is_empty() {
             content = content.child(
-                div().h(px(240.)).flex().items_center().justify_center().text_size(px(13.)).line_height(px(20.)).text_color(Theme::text_caption()).child(crate::settings::text("目录下暂无子页面")),
+                div().h(px(240.)).flex().items_center().justify_center().text_size(px(13.)).line_height(px(20.)).text_color(Theme::text_caption()).child(crate::settings::tr("此文件夹中没有其他文档", "No other documents in this folder")),
             );
         }
         for p in &ed.sub_pages {

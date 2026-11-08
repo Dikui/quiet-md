@@ -125,7 +125,7 @@ pub(crate) fn doc_icon() -> Div {
         .flex()
         .items_center()
         .justify_center()
-        .child(icon("doc", 18., Theme::text_caption()))
+        .child(icon("doc", 18., Theme::icon()))
 }
 
 /// The 24px square buttons at the right of the input row.
@@ -149,7 +149,7 @@ fn extra_segment(glyph: Option<&'static str>, text: String) -> Div {
         .flex_none()
         .flex()
         .items_center()
-        .children(glyph.map(|g| icon(g, 12., Theme::text_caption()).mr(px(4.))))
+        .children(glyph.map(|g| icon(g, 12., Theme::icon()).mr(px(4.))))
         .child(ui_text(text))
 }
 
@@ -339,7 +339,7 @@ impl Workspace {
                     .size(px(16.))
                     .ml(px(4.))
                     .mr(px(10.))
-                    .child(icon("search", 17.5, Theme::text_placeholder()).absolute().top(px(-0.75)).left(px(-0.75))),
+                    .child(icon("search", 17.5, Theme::icon()).absolute().top(px(-0.75)).left(px(-0.75))),
             )
             .child(div().flex_1().min_w_0().pl(px(2.)).flex().child(self.search.clone()))
             .when(has_text, |d| {

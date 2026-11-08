@@ -9,10 +9,16 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use crate::time::now;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::UNIX_EPOCH;
+#[path = "file_history.rs"] mod file_history;
+pub use file_history::{FileState, FileDelta, FileChanges};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Meta {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root_order: Option<u64>,
     pub created: u64,
     pub modified: u64,
     #[serde(default)]
@@ -52,7 +58,7 @@ fn catalogue_closed_default() -> bool { true }
 impl Default for Meta {
     fn default() -> Self {
         Self {
-            created: 0, modified: 0, pinned: false, opened: 0,
+            folder: None, root_order: None, created: 0, modified: 0, pinned: false, opened: 0,
             width: PageWidth::default(), catalogue_closed: true,
             parent: None, order: 0, starred: 0, reading: false,
             info: InfoRow::default(), refs_hidden: false,
@@ -87,9 +93,13 @@ fn is_zero(n: &u64) -> bool {
 }
 
 impl Meta {
-    /// Sort key among siblings: oldest first, moved pages last.
-    pub fn sibling_key(&self) -> u64 {
-        if self.order > 0 { self.order } else { self.created * 1000 }
+    /// Where a page or folder sits among its siblings: the sidebar's order, the
+    /// numbers a drop writes and Home's manual order all use it. Those never
+    /// placed by hand come first, most recently changed first; then the placed
+    /// ones in their order. Callers break remaining ties by id.
+    pub fn place(&self) -> (bool, u64, std::cmp::Reverse<u64>) {
+        let placed = if self.parent.is_none() { self.root_order.unwrap_or(0) } else { self.order };
+        (placed > 0, placed, std::cmp::Reverse(self.modified))
     }
 }
 
@@ -134,6 +144,10 @@ pub struct Settings {
     pub home_list: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub home_sort: Option<String>,
+    #[serde(default)]
+    pub home_folders_first: bool,
+    #[serde(default)]
+    pub home_manual_initialized: bool,
     /// Main window size, remembered like the quick note window's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window_size: Option<[f32; 2]>,
@@ -180,6 +194,7 @@ pub struct Entry {
 }
 
 pub struct Store {
+    file_changes: Vec<std::sync::Weak<std::sync::Mutex<Vec<FileDelta>>>>,
     loaded: std::cell::RefCell<HashMap<String, String>>,
     /// What `list` parsed from each file, kept while its mtime and size stay
     /// the same: re-reading every document on each window activation stalled
@@ -208,7 +223,10 @@ impl Drop for WriteLock {
 
 /// Version of the on-disk layout, kept in `format.json`. Bump it when a
 /// change would make older builds misread the library.
-pub const FORMAT: u32 = 1;
+pub const FORMAT: u32 = 2;
+
+#[path = "folders.rs"]
+mod folders;
 
 #[derive(Serialize, Deserialize)]
 struct FormatMarker {
@@ -345,13 +363,13 @@ impl Store {
         let mut warnings = vec![];
         let marker = root.join("format.json");
         match std::fs::read(&marker).ok().and_then(|b| serde_json::from_slice::<FormatMarker>(&b).ok()) {
-            Some(m) if m.format > FORMAT => warnings.push("这个文档库由更新版本的 Quiet.md 创建，部分内容可能无法正确显示，请升级后再编辑".into()),
+            Some(m) if m.format > FORMAT => anyhow::bail!("这个文档库由更新版本的 Quiet.md 创建，请升级后再打开"),
             Some(_) => {}
             None => write_atomic(&marker, &serde_json::to_vec_pretty(&FormatMarker { format: FORMAT })?)?,
         }
         let index = load_json(&root.join("index.json"), "文档索引", &mut warnings);
         let trash = load_json(&root.join("trash").join("index.json"), "回收站索引", &mut warnings);
-        let mut store = Store { root, index, trash, warnings, loaded: Default::default(), parsed: HashMap::new() };
+        let mut store = Store { file_changes: vec![], root, index, trash, warnings, loaded: Default::default(), parsed: HashMap::new() };
         if let Ok(entries) = std::fs::read_dir(store.recovery_dir()) {
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -369,6 +387,7 @@ impl Store {
                 });
             }
         }
+        store.migrate_folders()?;
         Ok(store)
     }
 
@@ -396,11 +415,14 @@ impl Store {
     fn begin_write(&mut self) -> Result<WriteLock> {
         let f = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(self.root.join(".lock"))?;
         f.lock()?;
+        let lock = WriteLock(f);
+        let marker: FormatMarker = serde_json::from_slice(&std::fs::read(self.root.join("format.json"))?)?;
+        anyhow::ensure!(marker.format <= FORMAT, "这个文档库由更新版本的 Quiet.md 创建，请升级后再打开");
         // An unreadable index is not judged here (that is `open`'s job): the
         // version in memory is written back unchanged.
         if let Some(index) = reread(&self.root.join("index.json")) { self.index = index; }
         if let Some(trash) = reread(&self.root.join("trash").join("index.json")) { self.trash = trash; }
-        Ok(WriteLock(f))
+        Ok(lock)
     }
 
     fn save_index(&self) -> Result<()> {
@@ -447,6 +469,13 @@ impl Store {
             });
             let Parsed { title, icon, body, reminders, links } = parsed;
             out.push(Entry { id, meta: meta.clone(), title, icon, body, reminders, links });
+        }
+        // Folders in id order: the index is a HashMap, whose order changes every time it is re-read.
+        let mut folders: Vec<(&String, &Meta)> = self.index.iter().filter(|(_, m)| m.folder.is_some()).collect();
+        folders.sort_by(|a, b| a.0.cmp(b.0));
+        for (id, meta) in folders {
+            let title = meta.folder.clone().unwrap_or_default();
+            out.push(Entry { id: id.clone(), meta: meta.clone(), title, icon: None, body: String::new(), reminders: vec![], links: vec![] });
         }
         let seen: std::collections::HashSet<&str> = out.iter().map(|e| e.id.as_str()).collect();
         self.parsed.retain(|id, _| seen.contains(id.as_str()));
@@ -502,6 +531,7 @@ impl Store {
         let id = uuid::Uuid::new_v4().to_string();
         let _lock = self.begin_write()?;
         self.save_now(&id, doc)?;
+        self.record_file_change(&id, None);
         Ok(id)
     }
 
@@ -520,6 +550,7 @@ impl Store {
     /// takes it along (`None`: deleted itself).
     pub fn delete(&mut self, id: &str, root: Option<&str>) -> Result<()> {
         let _lock = self.begin_write()?;
+        let before = self.file_state(id);
         let target = self.trash_path(id);
         anyhow::ensure!(!target.try_exists()?, "回收站已存在同名文档，未覆盖：{id}");
         std::fs::create_dir_all(self.root.join("trash"))?;
@@ -530,12 +561,13 @@ impl Store {
         trash.insert(id.to_string(), Trashed { meta, deleted: now(), root: root.map(str::to_string) });
         save_json(&self.root.join("trash/index.json"), &trash)?;
         self.trash = trash;
-        std::fs::rename(self.path(id), target)?;
+        if self.index.get(id).is_none_or(|m| m.folder.is_none()) { std::fs::rename(self.path(id), target)?; }
         self.index.remove(id);
         // Content has moved: cleanup failure must not report deletion as failed.
         if let Err(e) = self.save_index() {
             self.warnings.push(format!("文档已移入回收站，文档索引清理失败：{e}"));
         }
+        self.record_file_change(id, before);
         Ok(())
     }
 
@@ -608,7 +640,7 @@ impl Store {
         }
         if readable {
             let before = self.trash.len();
-            self.trash.retain(|id, _| on_disk.contains(id));
+            self.trash.retain(|id, t| t.meta.folder.is_some() || on_disk.contains(id));
             dirty |= self.trash.len() != before;
         }
         let cutoff = now().saturating_sub(TRASH_DAYS * 86_400);
@@ -631,7 +663,7 @@ impl Store {
                 let doc = std::fs::read_to_string(self.trash_path(id)).ok().and_then(|x| docxml::parse(&x).ok()).unwrap_or_default();
                 TrashEntry {
                     id: id.clone(),
-                    title: doc.title.text.clone(),
+                    title: t.meta.folder.clone().unwrap_or_else(|| doc.title.text.clone()),
                     icon: doc.icon.clone(),
                     deleted: t.deleted,
                     parent: t.meta.parent.clone(),
@@ -663,17 +695,20 @@ impl Store {
         self.index = index;
         for k in &group {
             if !self.trash.contains_key(k) { continue; }
-            std::fs::rename(self.trash_path(k), self.path(k)).with_context(|| format!("恢复文档 {k} 失败，已恢复的文档保留在文档库"))?;
+            if self.trash.get(k).is_none_or(|t| t.meta.folder.is_none()) { std::fs::rename(self.trash_path(k), self.path(k)).with_context(|| format!("恢复文档 {k} 失败，已恢复的文档保留在文档库"))?; }
             self.trash.remove(k);
+            self.record_file_change(k, None);
         }
         if let Err(e) = self.save_trash() {
             self.warnings.push(format!("文档已恢复，回收站索引清理失败：{e}"));
         }
+        drop(_lock);
+        self.migrate_folders()?;
         Ok(moved)
     }
 
     fn index_has(&self, id: &str) -> bool {
-        self.index.contains_key(id) && self.path(id).exists()
+        self.index.get(id).is_some_and(|m| m.folder.is_some() || self.path(id).exists())
     }
 
     /// 彻底删除 a page from the 回收站, with the pages that went with it.
@@ -734,9 +769,22 @@ impl Store {
     /// 重命名 a document that isn't open: rewrite its title on disk.
     pub fn rename(&mut self, id: &str, title: &str) -> Result<Meta> {
         let _lock = self.begin_write()?;
+        let before = self.file_state(id);
+        if self.index.get(id).is_some_and(|m| m.folder.is_some()) {
+            let previous = self.index.clone();
+            let m = self.index.get_mut(id).unwrap();
+            m.folder = Some(title.to_string());
+            m.modified = now();
+            let meta = m.clone();
+            if let Err(e) = self.save_index() { self.index = previous; return Err(e); }
+            self.record_file_change(id, before);
+            return Ok(meta);
+        }
         let mut doc = self.load(id)?;
         doc.title = crate::model::RichText::plain(title);
-        self.save_now(id, &doc)
+        let meta = self.save_now(id, &doc)?;
+        self.record_file_change(id, before);
+        Ok(meta)
     }
 
     /// Note that `id` was just opened.
@@ -751,13 +799,8 @@ impl Store {
 
     /// 移动到: hang `id` under `parent` (`None` = top level of 我的文档库), as its last child.
     pub fn set_parent(&mut self, id: &str, parent: Option<&str>) -> Result<Meta> {
-        let _lock = self.begin_write()?;
-        let m = self.index.get_mut(id).ok_or_else(|| anyhow::anyhow!("文档不存在"))?;
-        m.parent = parent.map(str::to_string);
-        m.order = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
-        let m = m.clone();
-        self.save_index()?;
-        Ok(m)
+        self.move_in_tree(id, parent, None)?;
+        Ok(self.index[id].clone())
     }
 
     /// 收藏 / 取消收藏; returns the new 收藏时间 (0: not starred).
@@ -805,6 +848,41 @@ mod tests {
 
     fn doc(title: &str) -> Document {
         Document { title: crate::model::RichText::plain(title), ..Default::default() }
+    }
+
+    #[test]
+    fn file_history_ignores_external_creations() {
+        let lib = Lib::new("file-journal");
+        let mut local = lib.open();
+        let mut other = lib.open();
+        let journal = local.track_file_changes();
+        let external = other.create_from(&doc("external")).unwrap();
+        let own = local.create_folder("own", None).unwrap();
+        local.list();
+        let changes = journal.take();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].id, own);
+        local.apply_file_history(&changes, false).unwrap();
+        assert!(local.list().iter().any(|e| e.id == external));
+        assert_eq!(local.load(&external).unwrap().title.text, "external");
+        local.apply_file_history(&changes, true).unwrap();
+        assert!(local.list().iter().any(|e| e.id == own));
+    }
+
+    #[test]
+    fn tree_history_uses_fresh_disk_positions() {
+        let lib = Lib::new("tree-journal");
+        let mut local = lib.open();
+        let a = local.create_folder("a", None).unwrap();
+        let b = local.create_folder("b", None).unwrap();
+        let page = local.create_from(&doc("page")).unwrap();
+        let mut other = lib.open();
+        other.set_parent(&page, Some(&a)).unwrap();
+        let journal = local.track_file_changes();
+        local.set_parent(&page, Some(&b)).unwrap();
+        let changes = journal.take();
+        local.apply_file_history(&changes, false).unwrap();
+        assert_eq!(local.index[&page].parent.as_ref(), Some(&a));
     }
 
     #[test]
@@ -937,25 +1015,61 @@ mod tests {
     }
 
     #[test]
-    fn newer_format_is_reported() {
+    fn pages_with_children_become_folders_in_their_old_order() {
+        // A FORMAT 1 library: 父 holds 子一 (older) and 子二 (newer).
+        let lib = Lib::new("migrate");
+        let mut s = lib.open();
+        let p = s.create_from(&doc("父")).unwrap();
+        let a = s.create_from(&doc("子一")).unwrap();
+        let b = s.create_from(&doc("子二")).unwrap();
+        drop(s);
+        let path = lib.0.join("index.json");
+        let mut index: HashMap<String, Meta> = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        for (k, created) in [(&a, 100), (&b, 200)] {
+            let m = index.get_mut(k).unwrap();
+            m.parent = Some(p.clone());
+            m.created = created;
+            m.order = 0;
+        }
+        std::fs::write(&path, serde_json::to_vec(&index).unwrap()).unwrap();
+        std::fs::write(lib.0.join("format.json"), b"{\"format\": 1}").unwrap();
+
+        let mut s = lib.open();
+        let list = s.list();
+        let folder = list.iter().find(|e| e.meta.folder.as_deref() == Some("父")).expect("父 became a folder");
+        assert!(folder.meta.parent.is_none());
+        let mut inside: Vec<&Entry> = list.iter().filter(|e| e.meta.parent.as_deref() == Some(folder.id.as_str())).collect();
+        inside.sort_by_key(|e| (e.meta.place(), e.id.clone()));
+        let titles: Vec<&str> = inside.iter().map(|e| e.title.as_str()).collect();
+        assert_eq!(titles, ["父", "子一", "子二"], "the page first, then its children oldest first");
+        assert!(lib.0.join("index.before-folders.json").exists());
+        assert!(String::from_utf8(std::fs::read(lib.0.join("format.json")).unwrap()).unwrap().contains(&FORMAT.to_string()));
+    }
+
+    #[test]
+    fn newer_format_is_refused() {
+        // A newer build may have changed what the index means (folders, FORMAT 2):
+        // opening it here could misread and then rewrite it, so it is refused.
         let lib = Lib::new("format");
         drop(lib.open());
         std::fs::write(lib.0.join("format.json"), format!("{{\"format\": {}}}", FORMAT + 1)).unwrap();
-        assert_eq!(lib.open().warnings.len(), 1);
+        let err = Store::open_at(lib.0.clone()).err().expect("a newer library must not open");
+        assert!(err.to_string().contains("更新版本"));
     }
 
     #[test]
     fn trash_round_trip() {
         let lib = Lib::new("trash");
         let mut s = lib.open();
-        let a = s.create_from(&doc("父")).unwrap();
+        // Only folders hold pages: a folder goes to the trash with what is in it.
+        let a = s.create_folder("父", None).unwrap();
         let b = s.create_from(&doc("子")).unwrap();
         s.set_parent(&b, Some(&a)).unwrap();
         s.delete(&b, Some(&a)).unwrap();
         s.delete(&a, None).unwrap();
         assert!(s.list().is_empty());
         let t = s.list_trash();
-        assert_eq!(t.len(), 1, "the child rides along with its parent");
+        assert_eq!(t.len(), 1, "the page rides along with its folder");
         assert_eq!(t[0].title, "父");
         let mut s = lib.open();
         assert!(!s.restore(&a).unwrap());
@@ -976,7 +1090,7 @@ mod tests {
         let index = std::fs::read(trash.join("index.json")).unwrap();
         std::fs::rename(&trash, lib.0.join("trash-away")).unwrap();
         std::fs::write(&trash, b"").unwrap();
-        let mut s = Store { root: lib.0.clone(), index: HashMap::new(), trash: serde_json::from_slice(&index).unwrap(), warnings: vec![], loaded: Default::default(), parsed: HashMap::new() };
+        let mut s = Store { file_changes: vec![], root: lib.0.clone(), index: HashMap::new(), trash: serde_json::from_slice(&index).unwrap(), warnings: vec![], loaded: Default::default(), parsed: HashMap::new() };
         assert_eq!(s.list_trash().len(), 1);
         assert_eq!(s.trash.len(), 1);
     }
