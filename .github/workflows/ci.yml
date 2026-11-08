@@ -9,7 +9,6 @@ on:
       - '**/*.md'
       - 'docs/**'
       - 'site/**'
-      - 'tools/promo/**'
   pull_request:
   workflow_dispatch:
 
