@@ -370,7 +370,8 @@ mod tests {
         assert_eq!(SLASH_ITEMS[r[0]].label, "表格");
         let r = filter_slash("cy");
         assert!(r.iter().all(|i| SLASH_ITEMS[*i].group == 1));
-        assert_eq!(r.len(), 9);
+        // 子页面列表 left the menu with folders (pages no longer hold pages).
+        assert_eq!(r.len(), 8);
         assert!(filter_slash("zzz").is_empty());
         assert_eq!(SLASH_ITEMS[filter_slash("djs")[0]].label, "倒计时");
         let r = filter_slash("list");

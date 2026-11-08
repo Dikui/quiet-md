@@ -50,13 +50,11 @@ impl<'a> Tree<'a> {
                 roots.push(e);
             }
         }
-        // Ties (never ordered by hand, changed in the same second) fall back to the
-        // id: the list is re-read often (each time the window comes back) and
-        // must come out the same every time.
-        roots.sort_by(|a, b| (a.meta.root_order.unwrap_or(0), std::cmp::Reverse(a.meta.modified), &a.id)
-            .cmp(&(b.meta.root_order.unwrap_or(0), std::cmp::Reverse(b.meta.modified), &b.id)));
+        // `Meta::place`, then the id: the list is re-read often (each time the
+        // window comes back) and must come out the same every time.
+        roots.sort_by(|a, b| (a.meta.place(), &a.id).cmp(&(b.meta.place(), &b.id)));
         for v in kids.values_mut() {
-            v.sort_by(|a, b| (a.meta.sibling_key(), &a.id).cmp(&(b.meta.sibling_key(), &b.id)));
+            v.sort_by(|a, b| (a.meta.place(), &a.id).cmp(&(b.meta.place(), &b.id)));
         }
         Tree { roots, kids }
     }

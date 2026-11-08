@@ -93,9 +93,13 @@ fn is_zero(n: &u64) -> bool {
 }
 
 impl Meta {
-    /// Sort key among siblings: oldest first, moved pages last.
-    pub fn sibling_key(&self) -> u64 {
-        if self.order > 0 { self.order } else { self.created * 1000 }
+    /// Where a page or folder sits among its siblings: the sidebar's order, the
+    /// numbers a drop writes and Home's manual order all use it. Those never
+    /// placed by hand come first, most recently changed first; then the placed
+    /// ones in their order. Callers break remaining ties by id.
+    pub fn place(&self) -> (bool, u64, std::cmp::Reverse<u64>) {
+        let placed = if self.parent.is_none() { self.root_order.unwrap_or(0) } else { self.order };
+        (placed > 0, placed, std::cmp::Reverse(self.modified))
     }
 }
 
@@ -964,25 +968,61 @@ mod tests {
     }
 
     #[test]
-    fn newer_format_is_reported() {
+    fn pages_with_children_become_folders_in_their_old_order() {
+        // A FORMAT 1 library: 父 holds 子一 (older) and 子二 (newer).
+        let lib = Lib::new("migrate");
+        let mut s = lib.open();
+        let p = s.create_from(&doc("父")).unwrap();
+        let a = s.create_from(&doc("子一")).unwrap();
+        let b = s.create_from(&doc("子二")).unwrap();
+        drop(s);
+        let path = lib.0.join("index.json");
+        let mut index: HashMap<String, Meta> = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        for (k, created) in [(&a, 100), (&b, 200)] {
+            let m = index.get_mut(k).unwrap();
+            m.parent = Some(p.clone());
+            m.created = created;
+            m.order = 0;
+        }
+        std::fs::write(&path, serde_json::to_vec(&index).unwrap()).unwrap();
+        std::fs::write(lib.0.join("format.json"), b"{\"format\": 1}").unwrap();
+
+        let mut s = lib.open();
+        let list = s.list();
+        let folder = list.iter().find(|e| e.meta.folder.as_deref() == Some("父")).expect("父 became a folder");
+        assert!(folder.meta.parent.is_none());
+        let mut inside: Vec<&Entry> = list.iter().filter(|e| e.meta.parent.as_deref() == Some(folder.id.as_str())).collect();
+        inside.sort_by_key(|e| (e.meta.place(), e.id.clone()));
+        let titles: Vec<&str> = inside.iter().map(|e| e.title.as_str()).collect();
+        assert_eq!(titles, ["父", "子一", "子二"], "the page first, then its children oldest first");
+        assert!(lib.0.join("index.before-folders.json").exists());
+        assert!(String::from_utf8(std::fs::read(lib.0.join("format.json")).unwrap()).unwrap().contains(&FORMAT.to_string()));
+    }
+
+    #[test]
+    fn newer_format_is_refused() {
+        // A newer build may have changed what the index means (folders, FORMAT 2):
+        // opening it here could misread and then rewrite it, so it is refused.
         let lib = Lib::new("format");
         drop(lib.open());
         std::fs::write(lib.0.join("format.json"), format!("{{\"format\": {}}}", FORMAT + 1)).unwrap();
-        assert_eq!(lib.open().warnings.len(), 1);
+        let err = Store::open_at(lib.0.clone()).err().expect("a newer library must not open");
+        assert!(err.to_string().contains("更新版本"));
     }
 
     #[test]
     fn trash_round_trip() {
         let lib = Lib::new("trash");
         let mut s = lib.open();
-        let a = s.create_from(&doc("父")).unwrap();
+        // Only folders hold pages: a folder goes to the trash with what is in it.
+        let a = s.create_folder("父", None).unwrap();
         let b = s.create_from(&doc("子")).unwrap();
         s.set_parent(&b, Some(&a)).unwrap();
         s.delete(&b, Some(&a)).unwrap();
         s.delete(&a, None).unwrap();
         assert!(s.list().is_empty());
         let t = s.list_trash();
-        assert_eq!(t.len(), 1, "the child rides along with its parent");
+        assert_eq!(t.len(), 1, "the page rides along with its folder");
         assert_eq!(t[0].title, "父");
         let mut s = lib.open();
         assert!(!s.restore(&a).unwrap());

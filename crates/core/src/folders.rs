@@ -31,6 +31,15 @@ impl Store {
                 if let Some(folder) = mapping.get(id) { meta.parent = Some(folder.clone()); meta.order = 1; }
                 else if let Some(folder) = meta.parent.as_ref().and_then(|p| mapping.get(p)) { meta.parent = Some(folder.clone()); }
             }
+            // Number each new folder's contents in their old order (the page that
+            // became the folder first, then its children oldest first), so the
+            // tree reads as it did before.
+            for (doc, folder) in &mapping {
+                let mut kids: Vec<String> = self.index.iter().filter(|(_, m)| m.parent.as_ref() == Some(folder)).map(|(k, _)| k.clone()).collect();
+                let old = |k: &String| { let m = &self.index[k]; (k != doc, if m.order > 0 { m.order } else { m.created * 1000 }, k.clone()) };
+                kids.sort_by_key(old);
+                for (i, k) in kids.iter().enumerate() { if let Some(m) = self.index.get_mut(k) { m.order = i as u64 + 1; m.root_order = None; } }
+            }
             if let Err(e) = self.save_index() { self.index = previous; return Err(e); }
         }
         write_atomic(&self.root.join("format.json"), &serde_json::to_vec_pretty(&FormatMarker { format: FORMAT })?)?;
@@ -66,16 +75,16 @@ impl Store {
         let mut groups: HashMap<Option<String>, Vec<String>> = HashMap::new();
         for (id, m) in &self.index { groups.entry(m.parent.clone()).or_default().push(id.clone()); }
         let mut changed = false;
+        // Freeze the order the sidebar shows (`Meta::place`): pages not yet placed
+        // keep their spot at the top instead of dropping to the end.
         for (parent, mut ids) in groups {
-            let rank = |id: &String| { let m = &self.index[id]; if parent.is_none() { m.root_order.unwrap_or(0) } else { m.order } };
-            let offset = if initialized { ids.iter().map(&rank).max().unwrap_or(0) } else { 0 };
-            if initialized { ids.retain(|id| rank(id) == 0); }
-            changed |= !ids.is_empty();
-            ids.sort_by(|a, b| self.index[b].modified.cmp(&self.index[a].modified).then(a.cmp(b)));
+            ids.sort_by(|a, b| (self.index[a].place(), a).cmp(&(self.index[b].place(), b)));
+            if initialized && ids.iter().all(|id| self.index[id].place().0) { continue; }
+            changed = true;
             for (i, id) in ids.iter().enumerate() {
                 let m = self.index.get_mut(id).unwrap();
-                if parent.is_none() { m.root_order = Some(offset + i as u64 + 1); }
-                else { m.order = offset + i as u64 + 1; m.root_order = None; }
+                if parent.is_none() { m.root_order = Some(i as u64 + 1); }
+                else { m.order = i as u64 + 1; m.root_order = None; }
             }
         }
         if !changed && initialized { return Ok(()); }
@@ -94,13 +103,9 @@ impl Store {
             if anchor == id { return Ok(()); }
         }
         let mut siblings: Vec<String> = self.index.iter().filter(|(k, m)| self.index_has(k) && m.parent.as_deref() == parent).map(|(k, _)| k.clone()).collect();
-        // The sidebar's order (`Tree::new`), ties broken by id like there, so the
-        // numbers written here match the order the drop was made in.
-        siblings.sort_by(|ka, kb| {
-            let (a, b) = (&self.index[ka], &self.index[kb]);
-            if parent.is_some() { (a.sibling_key(), ka).cmp(&(b.sibling_key(), kb)) }
-            else { (a.root_order.unwrap_or(0), std::cmp::Reverse(a.modified), ka).cmp(&(b.root_order.unwrap_or(0), std::cmp::Reverse(b.modified), kb)) }
-        });
+        // The sidebar's order (`Meta::place`, ties by id), so the numbers written
+        // here match the order the drop was made in.
+        siblings.sort_by(|ka, kb| (self.index[ka].place(), ka).cmp(&(self.index[kb].place(), kb)));
         siblings.retain(|key| key != id);
         let pos = before.and_then(|key| siblings.iter().position(|x| x == key)).unwrap_or(siblings.len());
         siblings.insert(pos, id.to_string());

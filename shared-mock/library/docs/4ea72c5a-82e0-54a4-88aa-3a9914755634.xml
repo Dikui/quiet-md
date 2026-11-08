@@ -20,14 +20,14 @@
 <h1>Three ways to write</h1>
 <grid><column width-ratio="0.3333"><h3>Slash commands</h3><p>Type <code>/</code> on an empty line to insert a block. Keep typing to filter: try <code>/table</code> or <code>/code</code>.</p></column><column width-ratio="0.3333"><h3>Markdown</h3><p>Type <code># </code> for a heading or <code>- </code> for a list. Wrapping words in <code>**bold**</code> applies <b>bold</b> as you finish typing.</p></column><column width-ratio="0.3334"><h3>Keyboard shortcuts</h3><p>Use <code>⌘ B</code> for bold and <code>⌘ ⌥ 1</code> for a heading. Press <code>⌘ /</code> to see the available shortcuts.</p></column></grid>
 <h1>Explore the guides</h1>
-<p>Read them in order, or jump straight to what you need.</p>
+<p>Read them in order, or jump straight to what you need. In the sidebar, the writing guides are kept together in the Writing and formatting folder.</p>
 <table><colgroup><col width="300"/><col width="390"/></colgroup><thead><tr><th><p>Guide</p></th><th><p>What you will learn</p></th></tr></thead><tbody>
 <tr><td><p><cite type="doc" doc-id="3e98a021-e013-5d8f-b41f-5c3fbf3dbfc3" file-type="docx">Writing: text, headings and paragraphs</cite></p></td><td><p>Headings, text styles, colors, links, alignment, indentation and Markdown shortcuts</p></td></tr>
 <tr><td><p><cite type="doc" doc-id="fef343a5-4478-5c2a-9c3b-efa884d71ddb" file-type="docx">Blocks: lists, quotes and callouts</cite></p></td><td><p>Lists, tasks, quotes, callouts, dividers, reminders, countdowns and buttons</p></td></tr>
 <tr><td><p><cite type="doc" doc-id="7012a014-8f62-5ad2-a811-6a75ddbfce29" file-type="docx">Tables and columns</cite></p></td><td><p>Tables, merged cells, header rows, cell colors and columns</p></td></tr>
 <tr><td><p><cite type="doc" doc-id="4ea21fc9-5061-5c03-a5a0-29465f895f0f" file-type="docx">Code and equations</cite></p></td><td><p>Syntax highlighting, code captions, wrapping and LaTeX equations</p></td></tr>
 <tr><td><p><cite type="doc" doc-id="0c7532c1-edcc-534d-8efe-7bf6da8718ba" file-type="docx">Images, files and covers</cite></p></td><td><p>Images, cropping, attachments, document icons and covers</p></td></tr>
-<tr><td><p><cite type="doc" doc-id="a9990a8f-54d2-50bf-aa14-94226d01fb8e" file-type="docx">Organize and find your notes</cite></p></td><td><p>The document tree, pins, favorites, backlinks, search, reading mode and trash</p></td></tr>
+<tr><td><p><cite type="doc" doc-id="a9990a8f-54d2-50bf-aa14-94226d01fb8e" file-type="docx">Organize and find your notes</cite></p></td><td><p>Folders, pins, favorites, backlinks, search, reading mode and trash</p></td></tr>
 <tr><td><p><cite type="doc" doc-id="f3a86f08-fa7b-5d70-bf15-82f7629bd818" file-type="docx">Import, export and back up</cite></p></td><td><p>Importing, exporting, printing, backups and moving your documents</p></td></tr>
 <tr><td><p><cite type="doc" doc-id="0c81100a-a7bb-57c7-9d69-ed30d9b9025c" file-type="docx">Make it yours: themes and shortcuts</cite></p></td><td><p>Themes, custom CSS, shortcuts, quick notes and interface language</p></td></tr>
 </tbody></table>

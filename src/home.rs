@@ -329,7 +329,8 @@ impl Default for Home {
             folder_list_scroll: Default::default(),
             grid_scrollbar: Default::default(),
             list_scrollbar: Default::default(),
-            sort: HomeSort::Visited,
+            // Manual: the sidebar's order (`Meta::place`), so both lists read the same.
+            sort: HomeSort::Manual,
             folders_first: false,
             sort_menu: false,
             thumbs: Default::default(),
@@ -445,10 +446,8 @@ impl Workspace {
     fn sorted_entries(&self, mut v: Vec<Entry>) -> Vec<Entry> {
         v.sort_by(|a, b| {
             let order = match self.home.sort {
-                HomeSort::Manual => {
-                    let rank = |e: &Entry| if e.meta.parent.is_none() { e.meta.root_order.unwrap_or(u64::MAX) } else if e.meta.order > 0 { e.meta.order } else { u64::MAX };
-                    rank(a).cmp(&rank(b)).then_with(|| b.meta.modified.cmp(&a.meta.modified))
-                }
+                // The sidebar's order: new pages at the top in both.
+                HomeSort::Manual => (a.meta.place(), &a.id).cmp(&(b.meta.place(), &b.id)),
                 HomeSort::Visited => visited(b).cmp(&visited(a)),
                 HomeSort::Modified => b.meta.modified.cmp(&a.meta.modified),
                 HomeSort::Created => b.meta.created.cmp(&a.meta.created),
@@ -461,7 +460,10 @@ impl Workspace {
 
     fn thumb(&self, e: &Entry) -> Thumb {
         use std::hash::{Hash, Hasher};
-        let children: Vec<&Entry> = self.entries.iter().filter(|p| p.meta.parent.as_deref() == Some(e.id.as_str())).collect();
+        // A child-page list shows the other pages in the document's folder, as in
+        // the open document (`sync_sub_pages`).
+        let tree = crate::tree::Tree::new(&self.entries);
+        let children: Vec<&Entry> = tree.children(e.meta.parent.as_deref()).iter().copied().filter(|p| p.id != e.id).collect();
         let mut stamp = rustc_hash::FxHasher::default();
         e.meta.modified.hash(&mut stamp);
         crate::settings::feishu().hash(&mut stamp);
@@ -572,7 +574,7 @@ impl Workspace {
         let s = self.store.settings();
         self.home.grid = !s.home_list;
         self.home.folders_first = s.home_folders_first;
-        self.home.sort = s.home_sort.as_deref().map(HomeSort::of).unwrap_or(HomeSort::Visited);
+        self.home.sort = s.home_sort.as_deref().map(HomeSort::of).unwrap_or(HomeSort::Manual);
     }
 
     fn save_home(&mut self) {

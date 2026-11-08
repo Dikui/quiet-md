@@ -17,24 +17,31 @@ from pathlib import Path
 here = Path(__file__).resolve().parent
 out = Path(sys.argv[1]).resolve()
 NS = uuid.UUID("6f7c1e9a-9d0b-4a51-8c7e-2a1d3b4c5e6f")
-# file stem -> (key, parent key, pinned)
+# Folders in the guide library: key -> title. A folder has no file, only an
+# index entry.
+FOLDERS = {"writing-guides": "Writing and formatting", "examples": "Examples"}
+# The top level, in order; every entry gets its place, so the sidebar and
+# Home's manual order (the default) read the same.
+TOP = ["welcome", "writing-guides", "examples", "organize", "data", "personalize", "practice"]
+# file stem -> (key, parent key, pinned); a parent is a key of FOLDERS
 KEYS = {
     "01-welcome": ("welcome", None, False),
-    "02-writing": ("writing", None, False),
-    "03-blocks": ("blocks", None, False),
-    "04-tables": ("tables", None, False),
-    "05-code": ("code", None, False),
-    "06-media": ("media", None, False),
+    "02-writing": ("writing", "writing-guides", False),
+    "03-blocks": ("blocks", "writing-guides", False),
+    "04-tables": ("tables", "writing-guides", False),
+    "05-code": ("code", "writing-guides", False),
+    "06-media": ("media", "writing-guides", False),
     "07-organize": ("organize", None, False),
-    "07a-reading-list": ("reading-list", "organize", False),
-    "07b-weekly": ("weekly", "organize", False),
+    "07a-reading-list": ("reading-list", "examples", False),
+    "07b-weekly": ("weekly", "examples", False),
     "08-data": ("data", None, False),
     "09-personalize": ("personalize", None, False),
     "10-practice": ("practice", None, False),
 }
 ids = {k: str(uuid.uuid5(NS, k)) for k, _, _ in KEYS.values()}
+ids.update({k: str(uuid.uuid5(NS, k)) for k in FOLDERS})
 srcs = {KEYS[p.stem][0]: p.read_text() for p in sorted((here / "src").glob("*.xml"))}
-missing = set(ids) - set(srcs)
+missing = set(ids) - set(srcs) - set(FOLDERS)
 assert not missing, f"no source for {missing}"
 
 def esc(s): return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -88,17 +95,28 @@ if out.exists() and any(out.iterdir()):
 (out / "docs").mkdir(parents=True)
 index = {}
 order = list(KEYS.values())
+inside = {}
 for i, (k, parent, pinned) in enumerate(order):
     (out / "docs" / f"{ids[k]}.xml").write_text(fill(srcs[k]))
-    # Reading order: the sidebar lists the most recently modified first, and
-    # children oldest first.
+    # Reading order is written out: TOP places the top level, and a folder's
+    # pages are numbered in file order.
     t = now - 60 * i
     meta = {"created": now - 3600 + i, "modified": t, "pinned": pinned, "opened": t}
     if parent:
+        assert parent in FOLDERS, f"{k}: pages live in folders, not under {parent}"
+        inside[parent] = inside.get(parent, 0) + 1
         meta["parent"] = ids[parent]
+        meta["order"] = inside[parent]
+    else:
+        assert k in TOP, f"{k} is missing from TOP"
     index[ids[k]] = meta
+for k, title in FOLDERS.items():
+    index[ids[k]] = {"folder": title, "created": now - 3600, "modified": now, "pinned": False, "opened": 0}
+assert set(TOP) == {k for k, p, _ in KEYS.values() if not p} | set(FOLDERS), "TOP must list every top-level entry"
+for i, k in enumerate(TOP):
+    index[ids[k]]["root_order"] = i + 1
 (out / "index.json").write_text(json.dumps(index, ensure_ascii=False, indent=2) + "\n")
-(out / "format.json").write_text('{\n  "format": 1\n}')
+(out / "format.json").write_text('{\n  "format": 2\n}')
 shutil.copytree(here / "assets", out / "assets" / "guides")
 (out / "assets" / "guides" / "covers").mkdir()
 for name in sorted(covers):
