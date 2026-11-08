@@ -169,6 +169,143 @@ pub struct ImageUi {
     pub(super) file_drop: Option<(BlockId, DropPlace, Bounds<Pixels>)>,
 }
 
+type Decoded = Result<Arc<RenderImage>, ImageCacheError>;
+
+struct Slot { image: Option<Decoded>, used: Instant, windows: HashMap<WindowId, Instant>, generation: Arc<()>, waiters: Vec<EntityId> }
+
+/// Decoded document pictures (editor and Home cards). gpui's global asset
+/// cache keeps every image it has decoded until the app quits; this one lets go
+/// of pictures unused for 30 seconds, or sooner when the offscreen cache
+/// exceeds 64 MiB, freeing their pixels and atlas textures.
+pub struct DocImages(Rc<RefCell<HashMap<Resource, Slot>>>, u8);
+
+thread_local! {
+    static PICTURES: std::cell::OnceCell<Entity<DocImages>> = const { std::cell::OnceCell::new() };
+    /// When each window last drew a frame.
+    static FRAMES: RefCell<HashMap<WindowId, Instant>> = RefCell::default();
+}
+
+static DECODERS: async_lock::Semaphore = async_lock::Semaphore::new(2);
+
+const UNUSED: Duration = Duration::from_secs(30);
+
+pub fn init_pictures(cx: &mut App) {
+    let e = cx.new(|cx: &mut Context<DocImages>| {
+        cx.spawn(async |this, cx| loop {
+            cx.background_executor().timer(Duration::from_secs(2)).await;
+            if this.update(cx, |c, cx| c.sweep(cx)).is_err() { break }
+        }).detach();
+        DocImages(Rc::default(), 0)
+    });
+    PICTURES.with(|p| { let _ = p.set(e); });
+}
+
+/// Called once per frame from the window root.
+pub fn frame_drawn(window: &Window) {
+    FRAMES.with(|f| f.borrow_mut().insert(window.window_handle().window_id(), Instant::now()));
+}
+
+pub trait PictureExt { fn doc_picture(self) -> Self; }
+
+impl PictureExt for Img {
+    /// Loads through the shared picture cache instead of the global one.
+    fn doc_picture(self) -> Self {
+        match PICTURES.with(|p| p.get().cloned()) { Some(e) => self.image_cache(&e).load_visible_only(), None => self }
+    }
+}
+
+impl DocImages {
+    /// Protects pictures used by any live window; ages out the rest in LRU order.
+    fn sweep(&mut self, cx: &mut App) {
+        let now = Instant::now();
+        let live = cx.windows();
+        let gone: Vec<Arc<RenderImage>> = FRAMES.with(|f| {
+            let mut f = f.borrow_mut();
+            f.retain(|id, _| live.iter().any(|w| w.window_id() == *id));
+            let mut map = self.0.borrow_mut();
+            let mut cold = Vec::new();
+            let mut bytes = 0usize;
+            for (r, s) in map.iter_mut() {
+                s.windows.retain(|id, _| f.contains_key(id));
+                let shown = s.windows.iter().any(|(id, used)| f.get(id).is_some_and(|t| used >= t));
+                if shown { continue }
+                let size = match &s.image {
+                    Some(Ok(im)) => (0..im.frame_count()).map(|i| im.as_bytes(i).map_or(0, |bytes| bytes.len())).sum(),
+                    _ => 0,
+                };
+                bytes += size;
+                cold.push((r.clone(), s.used, size));
+            }
+            cold.sort_by_key(|(_, used, _)| *used);
+            let mut out = Vec::new();
+            for (r, used, size) in cold {
+                if now - used < UNUSED && bytes <= 64 * 1024 * 1024 { continue }
+                bytes = bytes.saturating_sub(size);
+                if let Some(Slot { image: Some(Ok(im)), .. }) = map.remove(&r) { out.push(im); }
+            }
+            out
+        });
+        if !gone.is_empty() { self.1 = 3; }
+        for im in gone { cx.drop_image(im, None); }
+        // Command buffers can release their last references after this sweep.
+        if self.1 > 0 { self.1 -= 1; release_freed(); }
+    }
+
+    /// Forgets one picture, so the next frame decodes it again.
+    fn remove(r: &Resource, cx: &mut App) {
+        let Some(e) = PICTURES.with(|p| p.get().cloned()) else { return };
+        let map = e.read(cx).0.clone();
+        if let Some(Slot { image: Some(Ok(im)), .. }) = map.borrow_mut().remove(r) { cx.defer(move |cx| cx.drop_image(im, None)); }
+    }
+}
+
+/// macOS keeps freed large blocks dirty for reuse, still counted in the
+/// footprint; hands them back to the system.
+fn release_freed() {
+    #[cfg(target_os = "macos")]
+    unsafe {
+        unsafe extern "C" { fn malloc_zone_pressure_relief(zone: *mut std::ffi::c_void, goal: usize) -> usize; }
+        malloc_zone_pressure_relief(std::ptr::null_mut(), 0);
+    }
+}
+
+impl ImageCache for DocImages {
+    fn peek(&self, r: &Resource) -> Option<Decoded> { self.0.borrow().get(r).and_then(|s| s.image.clone()) }
+    fn load(&mut self, r: &Resource, window: &mut Window, cx: &mut App) -> Option<Decoded> {
+        let id = window.window_handle().window_id();
+        if let Some(s) = self.0.borrow_mut().get_mut(r) {
+            s.used = Instant::now();
+            s.windows.insert(id, s.used);
+            if s.image.is_none() && !s.waiters.contains(&window.current_view()) { s.waiters.push(window.current_view()); }
+            return s.image.clone();
+        }
+        let now = Instant::now();
+        let generation = Arc::new(());
+        self.0.borrow_mut().insert(r.clone(), Slot { image: None, used: now, windows: HashMap::from([(id, now)]), generation: generation.clone(), waiters: vec![window.current_view()] });
+        let generation = Arc::downgrade(&generation);
+        let queued = generation.clone();
+        let fut = <ImgResourceLoader as Asset>::load(r.clone(), cx);
+        let task = cx.background_executor().spawn(async move {
+            let _permit = DECODERS.acquire().await;
+            if queued.strong_count() == 0 { return None }
+            Some(fut.await)
+        });
+        let (map, r) = (self.0.clone(), r.clone());
+        cx.spawn(async move |cx| {
+            let Some(d) = task.await else { return };
+            // Still wanted (not removed for a retry meanwhile)?
+            if let Some(s) = map.borrow_mut().get_mut(&r)
+                && generation.ptr_eq(&Arc::downgrade(&s.generation)) {
+                s.image = Some(d);
+                let _ = cx.update(|cx| { for view in s.waiters.drain(..) { cx.notify(view); } });
+            }
+            // Decoding leaves big freed buffers behind (the file, RGB rows).
+            release_freed();
+        }).detach();
+        None
+    }
+}
+
 impl ImageUi {
     pub fn new(cx: &mut App) -> Self {
         ImageUi {
@@ -406,6 +543,7 @@ impl R<'_> {
                     .overflow_hidden()
                     .child(
                         img(p)
+                            .doc_picture()
                             .absolute()
                             .left(px(ix))
                             .top(px(iy))
@@ -701,7 +839,7 @@ impl Editor {
         let p = if src.starts_with("http://") || src.starts_with("https://") { Some(self.img.remote_path(src)) } else { image_path(src) };
         if let Some(p) = p {
             self.img.dims.borrow_mut().remove(&p);
-            ImageSource::from(p).remove_asset(cx);
+            DocImages::remove(&Resource::from(p), cx);
         }
         self.img.generation += 1;
         cx.notify();
@@ -1442,6 +1580,7 @@ impl Editor {
                 .bg(gpui::white())
                 .child(
                     img(path)
+                        .doc_picture()
                         .absolute()
                         .left(px(-crop[0] * fw))
                         .top(px(-crop[1] * fh))

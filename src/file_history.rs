@@ -21,7 +21,7 @@ impl Workspace {
         changes.iter().map(|c| {
             let entry = self.entries.iter().find(|e| e.id == c.id).cloned();
             let make = |state: &FileState| {
-                let mut e = entry.clone().unwrap_or_else(|| Entry { id: c.id.clone(), meta: Default::default(), title: String::new(), icon: None, body: String::new(), reminders: vec![], links: vec![] });
+                let mut e = entry.clone().unwrap_or_else(|| Entry { id: c.id.clone(), meta: Default::default(), title: String::new(), icon: None, body: Default::default(), reminders: vec![], links: vec![] });
                 e.title = state.title.clone(); e.meta.folder = state.folder.then(|| state.title.clone());
                 e.meta.parent = state.parent.clone(); e.meta.order = state.order; e.meta.root_order = state.root_order;
                 e

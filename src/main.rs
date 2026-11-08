@@ -127,6 +127,7 @@ fn main() {
         #[cfg(target_os = "macos")]
         set_app_icon();
         editor::math::load_fonts(cx);
+        editor::image::init_pictures(cx);
         input::bind_keys(cx);
         editor::keymap::bind_keys(cx);
         editor::image::bind_keys(cx);

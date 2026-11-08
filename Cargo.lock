@@ -4251,6 +4251,7 @@ name = "quiet_md"
 version = "0.1.7"
 dependencies = [
  "anyhow",
+ "async-lock",
  "base64",
  "core-foundation 0.10.0",
  "core-graphics 0.24.0",

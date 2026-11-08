@@ -186,7 +186,7 @@ pub struct Entry {
     /// 文档图标 emoji.
     pub icon: Option<String>,
     /// Plain text body, used for search and the list snippet.
-    pub body: String,
+    pub body: std::sync::Arc<str>,
     /// Its 日期提醒, for the system notifications.
     pub reminders: Vec<crate::model::InlineReminder>,
     /// Its @文档 mentions, for the 反向引用 of the documents they point at.
@@ -210,7 +210,7 @@ pub struct Store {
 
 /// The parts of an `Entry` that come from the document file.
 #[derive(Clone)]
-struct Parsed { title: String, icon: Option<String>, body: String, reminders: Vec<crate::model::InlineReminder>, links: Vec<crate::model::DocLink> }
+struct Parsed { title: String, icon: Option<String>, body: std::sync::Arc<str>, reminders: Vec<crate::model::InlineReminder>, links: Vec<crate::model::DocLink> }
 
 /// One write to the indexes: several copies of the app may share a library
 /// (builds tested side by side), so this is a short mutex, not a
@@ -452,7 +452,7 @@ impl Store {
                 None => {
                     let Ok(xml) = std::fs::read_to_string(&p) else { continue };
                     let doc = docxml::parse(&xml).unwrap_or_default();
-                    let parsed = Parsed { title: doc.title.text.clone(), icon: doc.icon.clone(), body: doc.plain_text(), reminders: doc.reminders(), links: doc.doc_links() };
+                    let parsed = Parsed { title: doc.title.text.clone(), icon: doc.icon.clone(), body: doc.plain_text().into(), reminders: doc.reminders(), links: doc.doc_links() };
                     if let Some((t, len)) = stamp { self.parsed.insert(id.clone(), (t, len, parsed.clone())); }
                     parsed
                 }
@@ -475,7 +475,7 @@ impl Store {
         folders.sort_by(|a, b| a.0.cmp(b.0));
         for (id, meta) in folders {
             let title = meta.folder.clone().unwrap_or_default();
-            out.push(Entry { id: id.clone(), meta: meta.clone(), title, icon: None, body: String::new(), reminders: vec![], links: vec![] });
+            out.push(Entry { id: id.clone(), meta: meta.clone(), title, icon: None, body: Default::default(), reminders: vec![], links: vec![] });
         }
         let seen: std::collections::HashSet<&str> = out.iter().map(|e| e.id.as_str()).collect();
         self.parsed.retain(|id, _| seen.contains(id.as_str()));
@@ -497,6 +497,9 @@ impl Store {
         if !shared { self.loaded.borrow_mut().insert(id.to_string(), xml); }
         Ok(doc)
     }
+
+    /// Release a closed editor's conflict-detection baseline, after its last window saved.
+    pub fn forget_loaded(&self, id: &str) { self.loaded.borrow_mut().remove(id); }
 
     pub fn save(&mut self, id: &str, doc: &Document) -> Result<Meta> {
         let _lock = self.begin_write()?;
@@ -981,6 +984,23 @@ mod tests {
         std::fs::remove_file(s.path(&b)).unwrap();
         assert_eq!(titles(&mut s), ["一改"]);
         assert_eq!(s.parsed.len(), 1);
+    }
+
+    #[test]
+    fn reopening_after_releasing_baseline_still_detects_conflicts() {
+        let lib = Lib::new("released-baseline");
+        let mut s = lib.open();
+        let id = s.create_from(&doc("initial")).unwrap();
+        s.load_for_edit(&id, false).unwrap();
+        s.forget_loaded(&id);
+        std::fs::write(s.path(&id), docxml::serialize(&doc("external before reopen"))).unwrap();
+        let reopened = s.load_for_edit(&id, false).unwrap();
+        assert_eq!(reopened.title.text, "external before reopen");
+        s.save(&id, &reopened).unwrap();
+        let external = docxml::serialize(&doc("external after reopen"));
+        std::fs::write(s.path(&id), &external).unwrap();
+        assert!(s.save(&id, &doc("local edit")).is_err());
+        assert_eq!(std::fs::read_to_string(s.path(&id)).unwrap(), external);
     }
 
     #[test]

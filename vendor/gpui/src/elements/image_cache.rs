@@ -24,6 +24,7 @@ pub fn image_cache(image_cache_provider: impl ImageCacheProvider) -> ImageCacheE
 #[derive(Clone)]
 pub struct AnyImageCache {
     image_cache: AnyEntity,
+    peek_fn: fn(&AnyEntity, &Resource, &App) -> Option<Result<Arc<RenderImage>, ImageCacheError>>,
     load_fn: fn(
         image_cache: &AnyEntity,
         resource: &Resource,
@@ -37,11 +38,17 @@ impl<I: ImageCache> From<Entity<I>> for AnyImageCache {
         Self {
             image_cache: image_cache.into_any(),
             load_fn: any_image_cache::load::<I>,
+            peek_fn: any_image_cache::peek::<I>,
         }
     }
 }
 
 impl AnyImageCache {
+    /// Read cached pixels without loading or marking an image as visible.
+    pub fn peek(&self, resource: &Resource, cx: &App) -> Option<Result<Arc<RenderImage>, ImageCacheError>> {
+        (self.peek_fn)(&self.image_cache, resource, cx)
+    }
+
     /// Load an image given a resource
     /// returns the result of loading the image if it has finished loading, or None if it is still loading
     pub fn load(
@@ -56,6 +63,10 @@ impl AnyImageCache {
 
 mod any_image_cache {
     use super::*;
+
+    pub(crate) fn peek<I: ImageCache>(cache: &AnyEntity, resource: &Resource, cx: &App) -> Option<Result<Arc<RenderImage>, ImageCacheError>> {
+        cache.clone().downcast::<I>().unwrap().read(cx).peek(resource)
+    }
 
     pub(crate) fn load<I: 'static + ImageCache>(
         image_cache: &AnyEntity,
@@ -201,6 +212,8 @@ impl ImageCacheItem {
 /// An object that can handle the caching and unloading of images.
 /// Implementations of this trait should ensure that images are removed from all windows when they are no longer needed.
 pub trait ImageCache: 'static {
+    /// Inspect a cached result without starting a load or updating its last use.
+    fn peek(&self, _resource: &Resource) -> Option<Result<Arc<RenderImage>, ImageCacheError>> { None }
     /// Load an image given a resource
     /// returns the result of loading the image if it has finished loading, or None if it is still loading
     fn load(

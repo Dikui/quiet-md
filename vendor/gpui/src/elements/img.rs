@@ -191,6 +191,7 @@ pub struct Img {
     source: ImageSource,
     style: ImageStyle,
     image_cache: Option<AnyImageCache>,
+    load_visible_only: bool,
 }
 
 /// Create a new image element.
@@ -201,10 +202,14 @@ pub fn img(source: impl Into<ImageSource>) -> Img {
         source: source.into(),
         style: ImageStyle::default(),
         image_cache: None,
+        load_visible_only: false,
     }
 }
 
 impl Img {
+    /// With explicit width and height, defer decoding until the image is painted.
+    pub fn load_visible_only(mut self) -> Self { self.load_visible_only = true; self }
+
     /// A list of all format extensions currently supported by this img element
     pub fn extensions() -> &'static [&'static str] {
         // This is the list in [image::ImageFormat::from_extension] + `svg`
@@ -302,13 +307,10 @@ impl Element for Img {
                 |mut style, window, cx| {
                     let mut replacement_id = None;
 
-                    match self.source.use_data(
-                        self.image_cache
-                            .clone()
-                            .or_else(|| window.image_cache_stack.last().cloned()),
-                        window,
-                        cx,
-                    ) {
+                    let cache = self.image_cache.clone().or_else(|| window.image_cache_stack.last().cloned());
+                    let deferred = self.load_visible_only && !matches!(style.size.width, Length::Auto) && !matches!(style.size.height, Length::Auto);
+                    let data = if deferred { self.source.get_data(cache, window, cx) } else { self.source.use_data(cache, window, cx) };
+                    match data {
                         Some(Ok(data)) => {
                             if let Some(state) = &mut state {
                                 let frame_count = data.frame_count();
@@ -457,6 +459,10 @@ impl Element for Img {
             window,
             cx,
             |style, window, cx| {
+                if self.load_visible_only {
+                    let visible = bounds.intersect(&window.content_mask().bounds);
+                    if visible.size.width <= px(0.) || visible.size.height <= px(0.) { return }
+                }
                 if let Some(Ok(data)) = source.use_data(
                     self.image_cache
                         .clone()
@@ -541,7 +547,7 @@ impl ImageSource {
         match self {
             ImageSource::Resource(resource) => {
                 if let Some(cache) = cache {
-                    cache.load(resource, window, cx)
+                    cache.peek(resource, cx)
                 } else {
                     window.get_asset::<ImgResourceLoader>(resource, cx)
                 }

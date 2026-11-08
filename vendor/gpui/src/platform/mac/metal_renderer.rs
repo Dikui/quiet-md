@@ -117,6 +117,10 @@ pub(crate) struct MetalRenderer {
     path_intermediate_texture: Option<metal::Texture>,
     path_intermediate_msaa_texture: Option<metal::Texture>,
     path_sample_count: u32,
+    // quiet.md: the path textures are window-sized (the MSAA one 4x), so they
+    // are only made while frames draw paths and dropped a second after.
+    path_texture_size: Size<DevicePixels>,
+    path_last_used: Option<std::time::Instant>,
 }
 
 #[repr(C)]
@@ -274,6 +278,8 @@ impl MetalRenderer {
             path_intermediate_texture: None,
             path_intermediate_msaa_texture: None,
             path_sample_count: PATH_SAMPLE_COUNT,
+            path_texture_size: Size::default(),
+            path_last_used: None,
         }
     }
 
@@ -310,7 +316,23 @@ impl MetalRenderer {
             width: DevicePixels(size.width as i32),
             height: DevicePixels(size.height as i32),
         };
-        self.update_path_intermediate_textures(device_pixels_size);
+        self.path_texture_size = device_pixels_size;
+        self.path_intermediate_texture = None;
+        self.path_intermediate_msaa_texture = None;
+    }
+
+    /// quiet.md: makes the path textures on the first frame with paths, drops
+    /// them once no frame has drawn any for a second.
+    fn prepare_path_textures(&mut self, scene: &Scene) {
+        let now = std::time::Instant::now();
+        if !scene.paths.is_empty() {
+            self.path_last_used = Some(now);
+            if self.path_intermediate_texture.is_none() { self.update_path_intermediate_textures(self.path_texture_size); }
+        } else if self.path_last_used.is_some_and(|t| now - t > std::time::Duration::from_secs(1)) {
+            self.path_last_used = None;
+            self.path_intermediate_texture = None;
+            self.path_intermediate_msaa_texture = None;
+        }
     }
 
     fn update_path_intermediate_textures(&mut self, size: Size<DevicePixels>) {
@@ -334,7 +356,14 @@ impl MetalRenderer {
         if self.path_sample_count > 1 {
             let mut msaa_descriptor = texture_descriptor;
             msaa_descriptor.set_texture_type(metal::MTLTextureType::D2Multisample);
-            msaa_descriptor.set_storage_mode(metal::MTLStorageMode::Private);
+            // quiet.md: Apple GPUs keep the samples in tile memory: the pass
+            // clears them and only stores the resolve, so they need no RAM.
+            if self.device.supports_family(metal::MTLGPUFamily::Apple1) {
+                msaa_descriptor.set_storage_mode(metal::MTLStorageMode::Memoryless);
+                msaa_descriptor.set_usage(metal::MTLTextureUsage::RenderTarget);
+            } else {
+                msaa_descriptor.set_storage_mode(metal::MTLStorageMode::Private);
+            }
             msaa_descriptor.set_sample_count(self.path_sample_count as _);
             self.path_intermediate_msaa_texture = Some(self.device.new_texture(&msaa_descriptor));
         } else {
@@ -462,6 +491,7 @@ impl MetalRenderer {
         target: &metal::TextureRef,
         viewport_size: Size<DevicePixels>,
     ) -> Result<metal::CommandBuffer> {
+        self.prepare_path_textures(scene);
         let command_queue = self.command_queue.clone();
         let command_buffer = command_queue.new_command_buffer();
         let alpha = if self.layer.is_opaque() { 1. } else { 0. };
