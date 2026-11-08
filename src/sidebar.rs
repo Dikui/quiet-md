@@ -431,6 +431,7 @@ impl Workspace {
 
     /// 批量创建副本: a "… 副本" of each checked doc; leaves 批量操作.
     pub(crate) fn batch_copy(&mut self, cx: &mut Context<Self>) {
+        let file_before = self.entries.clone();
         let ids = self.checked();
         if ids.is_empty() {
             return;
@@ -442,6 +443,7 @@ impl Workspace {
         self.sort();
         self.batch = None;
         self.row_menu = None;
+        self.remember_files(file_before, crate::settings::tr("批量创建副本", "Duplicate selection"));
         cx.notify();
     }
 

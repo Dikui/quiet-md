@@ -646,6 +646,23 @@ impl Core {
         }
     }
 
+    pub fn receive_file_title(&mut self, title: &str) {
+        if self.doc.title.text == title { return; }
+        let rename = |doc: &mut Document, sel: &mut Selection| {
+            doc.title = RichText::plain(title);
+            for pos in [&mut sel.anchor, &mut sel.head] {
+                if pos.block == TITLE { pos.offset = pos.offset.min(title.len()); }
+            }
+        };
+        rename(&mut self.doc, &mut self.sel);
+        for snapshot in self.undo.iter_mut().chain(self.redo.iter_mut()) {
+            let snapshot = std::sync::Arc::make_mut(snapshot);
+            rename(&mut snapshot.doc, &mut snapshot.sel);
+            snapshot.bytes = doc_bytes(&snapshot.doc);
+        }
+        self.last_edit = None; self.generation += 1;
+    }
+
     pub fn undo(&mut self) -> bool {
         let Some(s) = self.undo.pop_back() else { return false };
         self.generation += 1;

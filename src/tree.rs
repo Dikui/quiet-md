@@ -139,6 +139,7 @@ impl Workspace {
 
     /// The row "+" → 文档: a new page under `parent`, opened.
     pub fn new_child(&mut self, parent: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let file_before = self.entries.clone();
         let parent = if self.entries.iter().any(|e| e.id == parent && e.meta.folder.is_some()) { parent.to_string() }
             else { return; };
         let parent = parent.as_str();
@@ -156,6 +157,7 @@ impl Workspace {
             }
             Err(e) => self.status = crate::app::SaveStatus::Failed(crate::localized_format!("新建失败：{}", "Could not create document: {}", crate::settings::diagnostic(&e.to_string()))),
         }
+        self.remember_files(file_before, crate::settings::tr("新建文档", "New document"));
         cx.notify();
     }
 
@@ -188,6 +190,7 @@ impl Workspace {
     /// 移动到: hang each page under `target` (`None`: top level), skipping
     /// moves into its own subtree.
     pub(crate) fn move_docs(&mut self, ids: &[String], target: Option<String>, cx: &mut Context<Self>) {
+        let file_before = self.entries.clone();
         let mut failed = false;
         for id in ids {
             let inside = target.as_ref().is_some_and(|t| Tree::new(&self.entries).subtree(id).contains(t));
@@ -210,6 +213,7 @@ impl Workspace {
         self.sync_sub_pages(cx);
         self.entries = self.store.list(); self.sort();
         if !failed { self.show_toast(crate::settings::text("移动成功"), cx); }
+        self.remember_files(file_before, crate::settings::tr("移动", "Move"));
         cx.notify();
     }
 

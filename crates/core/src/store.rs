@@ -10,6 +10,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use crate::time::now;
 use std::time::UNIX_EPOCH;
+#[path = "file_history.rs"] mod file_history;
+pub use file_history::{FileState, FileDelta};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Meta {
@@ -138,6 +140,10 @@ pub struct Settings {
     pub home_list: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub home_sort: Option<String>,
+    #[serde(default)]
+    pub home_folders_first: bool,
+    #[serde(default)]
+    pub home_manual_initialized: bool,
     /// Main window size, remembered like the quick note window's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window_size: Option<[f32; 2]>,

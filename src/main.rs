@@ -40,6 +40,7 @@ mod sidebar;
 mod sidebar_drag;
 mod home_folder;
 mod folders;
+mod file_history;
 mod settings;
 mod themes;
 mod shortcuts;

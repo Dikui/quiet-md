@@ -87,6 +87,9 @@ pub fn set_menus(cx: &mut App) {
 
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
+        KeyBinding::new("secondary-z", crate::editor::keymap::Undo, Some("Workspace")),
+        KeyBinding::new("secondary-shift-z", crate::editor::keymap::Redo, Some("Workspace")),
+        KeyBinding::new("secondary-y", crate::editor::keymap::Redo, Some("Workspace")),
         KeyBinding::new("cmd-n", NewDoc, None),
         KeyBinding::new("cmd-shift-n", crate::quick_note::QuickNew, None),
         KeyBinding::new("cmd-,", OpenSettings, None),
@@ -241,6 +244,7 @@ pub struct Workspace {
     pub status: SaveStatus,
     pub row_menu: Option<RowMenu>,
     pub rename: Option<Rename>,
+    pub(crate) file_history: crate::file_history::FileHistory,
     /// Last-frame bounds of each row's "…" button, to hang its menu from.
     pub more_bounds: Rc<RefCell<HashMap<String, Bounds<Pixels>>>>,
     /// Header "…" menu and its open submenu.
@@ -291,7 +295,7 @@ pub struct Workspace {
     unsaved: bool,
     /// Held back by a failed save: runs after 重试 succeeds or 放弃修改.
     pub(crate) after_save: Option<AfterSave>,
-    editor_sub: Option<Subscription>,
+    pub(crate) editor_sub: Option<Subscription>,
     _subs: Vec<Subscription>,
 }
 
@@ -418,6 +422,7 @@ impl Workspace {
             status: SaveStatus::Idle,
             row_menu: None,
             rename: None,
+            file_history: Default::default(),
             more_bounds: Default::default(),
             doc_menu: false,
             doc_sub: None,
@@ -532,6 +537,7 @@ impl Workspace {
         }
         self.editor_sub = Some(cx.subscribe_in(&editor, window, |this, _, ev: &EditorEvent, window, cx| match ev {
             EditorEvent::Changed => {
+                this.file_history.prefer_files = false;
                 // 阅读模式 put the document back: nothing to save.
                 let rejected = this.editor.clone().is_some_and(|ed| ed.update(cx, |e, cx| e.reject_read_only_edit(cx)));
                 if !rejected {
@@ -596,6 +602,7 @@ impl Workspace {
         if !self.save_before(cx, |w, window, cx| w.new_doc(window, cx)) {
             return;
         }
+        let file_before = self.entries.clone();
         let parent = self.creation_parent();
         match self.store.create().and_then(|(id, doc)| {
             if let Some(parent) = &parent { self.store.set_parent(&id, Some(parent))?; }
@@ -615,6 +622,7 @@ impl Workspace {
             }
             Err(e) => self.status = SaveStatus::Failed(crate::localized_format!("新建失败：{}", "Could not create document: {}", crate::settings::diagnostic(&e.to_string()))),
         }
+        self.remember_files(file_before, crate::settings::tr("新建文档", "New document"));
         cx.notify();
     }
 
@@ -661,6 +669,7 @@ impl Workspace {
                 return;
             }
         }
+        let file_before = self.entries.clone();
         let mut deleted = vec![];
         let mut errors = vec![];
         for (id, root) in &groups {
@@ -697,6 +706,7 @@ impl Workspace {
                 None => self.view = if view == View::Doc { View::Home } else { view },
             }
         }
+        self.remember_files(file_before, crate::settings::tr("删除", "Delete"));
         self.sync_sub_pages(cx);
         if self.view == View::Trash {
             self.trash = self.store.list_trash();
@@ -808,21 +818,22 @@ impl Workspace {
         let title = r.field.read(cx).text.trim().to_string();
         let old = self.entries.iter().find(|e| e.id == r.id).map(|e| e.title.trim().to_string());
         if commit && old.is_some_and(|o| o != title) {
-            if self.current.as_deref() == Some(r.id.as_str()) {
-                // The open editor owns the title; its Changed event saves it.
-                if let Some(ed) = &self.editor {
-                    ed.update(cx, |e, cx| e.set_title(&title, cx));
-                }
-            } else if let Some(peer) = self.document_peers(&r.id, window, cx).first() {
+            if let Some(peer) = self.document_peers(&r.id, window, cx).first() {
                 peer.update(cx, |e, cx| e.set_title(&title, cx));
             } else {
+                if !self.flush(cx) { return; }
+                let file_before = self.entries.clone();
                 match self.store.rename(&r.id, &title) {
                     Ok(meta) => {
                         if let Some(e) = self.entries.iter_mut().find(|e| e.id == r.id) {
-                            e.title = title;
+                            e.title = title.clone();
                             e.meta = meta;
                         }
                         self.sort();
+                        if self.current.as_deref() == Some(r.id.as_str()) && let Some(ed) = &self.editor {
+                            ed.update(cx, |e, cx| e.receive_file_title(&title, cx));
+                        }
+                        self.remember_files(file_before, crate::settings::tr("重命名", "Rename"));
                     }
                     Err(e) => self.status = SaveStatus::Failed(crate::localized_format!("重命名失败：{}", "Could not rename document: {}", crate::settings::diagnostic(&e.to_string()))),
                 }
@@ -836,7 +847,7 @@ impl Workspace {
         cx.notify();
     }
 
-    fn document_peers(&self, id: &str, window: &Window, cx: &mut Context<Self>) -> Vec<Entity<Editor>> {
+    pub(crate) fn document_peers(&self, id: &str, window: &Window, cx: &mut Context<Self>) -> Vec<Entity<Editor>> {
         cx.windows().into_iter().filter(|w| w.window_id() != window.window_handle().window_id())
             .filter_map(|w| w.downcast::<Workspace>())
             .filter_map(|w| w.update(cx, |ws, _, _| {
@@ -1357,6 +1368,8 @@ impl Render for Workspace {
         div()
             .id("workspace")
             .key_context("Workspace")
+            .capture_action(cx.listener(|w, _: &crate::editor::keymap::Undo, window, cx| w.capture_file_history(false, window, cx)))
+            .capture_action(cx.listener(|w, _: &crate::editor::keymap::Redo, window, cx| w.capture_file_history(true, window, cx)))
             .track_focus(&self.focus)
             // A click on what takes no input (title bar, page margins, the
             // sidebar's blank space) leaves the caret in the document, also
@@ -1426,6 +1439,7 @@ impl Render for Workspace {
             }))
             // Esc leaves 批量操作 (closing its menu or confirmation first), even from the editor.
             .capture_key_down(cx.listener(|w, ev: &KeyDownEvent, _, cx| {
+                if w.file_history.busy && !(ev.keystroke.modifiers.secondary() && matches!(ev.keystroke.key.as_str(), "z" | "y")) { cx.stop_propagation(); return; }
                 if ev.keystroke.key == "escape" && w.folder_drag.active.is_some() {
                     w.end_folder_drag(true, cx); cx.stop_propagation(); return;
                 }
@@ -1471,6 +1485,9 @@ impl Render for Workspace {
             .children(search)
             .children(resize_overlay)
             .children(folder_drag_overlay)
+            .when(self.file_history.busy, |d| d.child(deferred(div().id("file-history-pending").absolute().inset_0().occlude()
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())).with_priority(20)))
             .children(home_drag_overlay)
             .children(create_menu)
             .children(toast)

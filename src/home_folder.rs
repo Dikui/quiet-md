@@ -35,6 +35,8 @@ pub(crate) struct HomeFolders {
     pub(crate) drag: Option<HomeDrag>,
     /// Last-frame window bounds of the folder and document cards, by entry id.
     bounds: Rc<RefCell<HashMap<String, Bounds<Pixels>>>>,
+    slots: Rc<RefCell<HashMap<String, Bounds<Pixels>>>>,
+    motion: RefCell<HashMap<String, (Spring<2>, Instant)>>,
 }
 
 struct FolderFx {
@@ -78,10 +80,35 @@ pub(crate) struct HomeDrag {
     home: Bounds<Pixels>,
     /// The carried paper in window coordinates (x, y, w, h).
     rect: Spring<4>,
+    /// The folder that accepted the card: a drop now puts it inside.
     over: Option<String>,
+    /// The slot the card's gap sits in now (an index into `slots`).
+    target: usize,
+    /// Where the pointer rests and since when: a slot to move the gap to, or a
+    /// folder to open. Resting on a folder's middle opens it after `JOIN`;
+    /// a drop before that only reorders, so swapping past folders stays easy.
+    aim: Option<Aim>,
+    /// Every card's layout slot when picked up, in the shown order.
+    slots: Vec<(String, Option<Bounds<Pixels>>)>,
+    slot: Spring<4>,
     returning: bool,
     last: Option<Instant>,
 }
+
+#[derive(Clone)]
+struct Aim { slot: usize, join: Option<String>, since: Instant, anchor: Point<Pixels> }
+
+/// Seconds the pointer rests on a folder's middle before the folder takes the card:
+/// longer than the pause before letting go, so a drop meant as a swap stays a swap.
+const JOIN: f32 = 0.55;
+/// Seconds over another card before the gap moves there, slow or not: cards
+/// make room as the pointer goes, only a quick pass leaves them be.
+const SHIFT: f32 = 0.07;
+/// A folder's rim makes room only once the pointer slows down (moves less than
+/// `RIM` in `SHIFT`), so heading for its middle does not push it away.
+const RIM: f32 = 22.;
+/// Resting on a folder's middle means staying within this.
+const STILL: f32 = 10.;
 
 /// What lies on a paper: drawn lines, a real title over drawn lines, or real content.
 #[derive(Clone, Copy, PartialEq)]
@@ -254,7 +281,10 @@ impl Workspace {
         let w = self.home.folders.bounds.borrow().get(&id).map_or(236., |b| f32::from(b.size.width));
         let h = card_h;
         let hot = self.home.folders.hovered.as_ref() == Some(&id) && self.home.folders.drag.is_none();
-        let over = self.home.folders.drag.as_ref().is_some_and(|d| d.started && !d.returning && d.over.as_ref() == Some(&id));
+        let live = self.home.folders.drag.as_ref().filter(|d| d.started && !d.returning);
+        let over = live.is_some_and(|d| d.over.as_ref() == Some(&id));
+        // Resting on it: the papers rise to say it noticed, before it takes the card.
+        let aimed = live.is_some_and(|d| d.aim.as_ref().is_some_and(|a| a.join.as_ref() == Some(&id)));
         let front = self.home.folders.fx.get(&id).and_then(|f| f.front.clone());
         let (kids, count) = self.folder_papers(&id, front.as_ref());
 
@@ -262,7 +292,7 @@ impl Workspace {
         let fx = self.home.folders.fx.entry(id.clone()).or_insert_with(FolderFx::new);
         let now = Instant::now();
         let dt = fx.last.replace(now).map_or(1. / 120., |t| now.duration_since(t).as_secs_f32().min(0.032));
-        fx.open.to = if hot || over { 1. } else { 0. };
+        fx.open.to = if hot || over || aimed { 1. } else { 0. };
         fx.mouth.to = if over { 1. } else { 0. };
         for p in &mut fx.papers { p.to = fx.open.to + 0.35 * fx.mouth.to; }
         let mut moving = fx.open.step(dt) | fx.mouth.step(dt) | fx.dip.step(dt);
@@ -324,6 +354,7 @@ impl Workspace {
         let reveal = if menu_on { 1. } else { (o - m).clamp(0., 1.) };
         let (open_id, menu_id, new_id) = (id.clone(), id.clone(), id.clone());
         let hover_id = id.clone();
+        let arm_id = id.clone();
         let label = div().absolute().left(px(16.)).right(px(14.)).bottom(px(14. - lift)).flex().items_end().gap(px(8.))
             .child(div().flex_1().min_w_0().flex().flex_col()
                 .child(div().text_size(px(15.)).line_height(px(22.)).font_weight(FontWeight::SEMIBOLD).text_color(Theme::text())
@@ -341,6 +372,7 @@ impl Workspace {
                 .child(self.home_more(e, format!("home-fmore-{id}"), cx).size(px(28.)).rounded_full().bg(theme::raised(Theme::bg_body())).shadow(theme::shadow_button()).opacity(reveal)));
         div().id(SharedString::from(format!("home-folder-{id}"))).relative().w_full().min_w_0().h(px(h)).cursor_pointer()
             .when(self.batch.is_some(), |d| d.opacity(0.45))
+            .when(self.manual_home_sort() && self.batch.is_none(), |d| d.on_mouse_down(MouseButton::Left, cx.listener(move |w, ev: &MouseDownEvent, _, cx| w.arm_home_drag(&arm_id, ev.position, cx))))
             .on_hover(cx.listener(move |w, on: &bool, _, cx| {
                 if *on { w.home.folders.hovered = Some(hover_id.clone()); }
                 else if w.home.folders.hovered.as_ref() == Some(&hover_id) { w.home.folders.hovered = None; }
@@ -368,11 +400,75 @@ impl Workspace {
         canvas(move |b, _, _| { record.borrow_mut().insert(id.clone(), b); }, |_, _, _, _| {}).absolute().inset_0()
     }
 
-    pub(crate) fn arm_home_drag(&mut self, id: &str, at: Point<Pixels>) {
+    /// The shown order while dragging: the others as they were, the card at its gap.
+    fn home_drag_order(d: &HomeDrag) -> Vec<String> {
+        let mut order: Vec<String> = d.slots.iter().map(|(id, _)| id.clone()).filter(|id| *id != d.id).collect();
+        order.insert(d.target.min(order.len()), d.id.clone());
+        order
+    }
+
+    /// How far each card stands from its own slot in the drag's order.
+    fn home_drag_offsets(&self) -> HashMap<String, [f32; 2]> {
+        let Some(d) = self.home.folders.drag.as_ref().filter(|d| d.started && !d.returning) else { return HashMap::new() };
+        Self::home_drag_order(d).iter().enumerate().filter_map(|(i, id)| {
+            let origin = d.slots.iter().find(|(k, _)| k == id)?.1?;
+            let target = d.slots.get(i)?.1?;
+            Some((id.clone(), [f32::from(target.left() - origin.left()), f32::from(target.top() - origin.top())]))
+        }).collect()
+    }
+
+    fn home_drag_offset(&self, id: &str) -> [f32; 2] {
+        let Some(d) = self.home.folders.drag.as_ref().filter(|d| d.started && !d.returning) else { return [0., 0.] };
+        let Some(source) = d.slots.iter().position(|(id, _)| id == &d.id) else { return [0., 0.] };
+        let Some(index) = d.slots.iter().position(|(key, _)| key == id) else { return [0., 0.] };
+        // Its place among the others, then one further on past the gap.
+        let rest = index - usize::from(index > source);
+        let destination = if index == source { d.target } else { rest + usize::from(rest >= d.target) };
+        match (d.slots[index].1, d.slots.get(destination).and_then(|(_, b)| *b)) {
+            (Some(a), Some(b)) => [f32::from(b.left() - a.left()), f32::from(b.top() - a.top())], _ => [0., 0.],
+        }
+    }
+
+    pub(crate) fn home_motion(&self, id: &str, child: AnyElement) -> AnyElement {
+        let target = self.home_drag_offset(id);
+        let now = Instant::now();
+        let mut motions = self.home.folders.motion.borrow_mut();
+        let (spring, last) = motions.entry(id.to_string()).or_insert((Spring::new([0., 0.]), now));
+        spring.target = target;
+        let moving = spring.step(now.duration_since(*last).as_secs_f32().min(0.032)); *last = now;
+        let [x, y] = spring.p;
+        let lifted = self.manual_home_sort() && self.home_dragging(id);
+        let slots = self.home.folders.slots.clone(); let key = id.to_string();
+        div().relative().w_full().min_w_0()
+            .child(canvas(move |b, _, _| { slots.borrow_mut().insert(key.clone(), b); }, move |_, _, window, _| { if moving { window.request_animation_frame(); } }).absolute().inset_0())
+            .child(div().relative().left(px(x)).top(px(y)).when(lifted, |d| d.opacity(0.)).child(child))
+            .into_any_element()
+    }
+
+    fn settle_home_motion(&self, removing: bool) {
+        let targets = if removing {
+            self.home.folders.drag.as_ref().map(|d| d.slots.iter().filter(|(id, _)| id != &d.id).enumerate().filter_map(|(i, (id, origin))| {
+                let origin = (*origin)?; let target = d.slots.get(i)?.1?;
+                Some((id.clone(), [f32::from(target.left() - origin.left()), f32::from(target.top() - origin.top())]))
+            }).collect()).unwrap_or_default()
+        } else { self.home_drag_offsets() };
+        for (id, (spring, _)) in self.home.folders.motion.borrow_mut().iter_mut() {
+            if let Some(target) = targets.get(id) { for i in 0..2 { spring.p[i] -= target[i]; } }
+            spring.target = [0., 0.];
+        }
+    }
+
+    pub(crate) fn arm_home_drag(&mut self, id: &str, at: Point<Pixels>, cx: &mut Context<Self>) {
+        if self.manual_home_sort() && !self.prepare_manual_order(cx) { return; }
         let Some(home) = self.home.folders.bounds.borrow().get(id).copied() else { return };
+        let shown = if self.view == crate::app::View::Folder { self.level_entries(self.folder_current.as_deref()) } else { self.home_entries() };
+        let slots: Vec<_> = shown.iter().map(|e| (e.id.clone(), self.home.folders.slots.borrow().get(&e.id).copied())).collect();
+        let target = slots.iter().position(|(k, _)| k == id).unwrap_or(0);
+        let slot = self.home.folders.slots.borrow().get(id).copied().unwrap_or(home);
+        let slot = Spring::new([f32::from(slot.left()), f32::from(slot.top()), f32::from(slot.size.width), f32::from(slot.size.height)]);
         let grab = (((at.x - home.left()) / home.size.width).clamp(0., 1.), ((at.y - home.top()) / home.size.height).clamp(0., 1.));
         let r = [f32::from(home.left()), f32::from(home.top()), f32::from(home.size.width), f32::from(home.size.height)];
-        self.home.folders.drag = Some(HomeDrag { id: id.to_string(), start: at, at, started: false, grab, home, rect: Spring::new(r), over: None, returning: false, last: None });
+        self.home.folders.drag = Some(HomeDrag { id: id.to_string(), start: at, at, started: false, grab, home, rect: Spring::new(r), over: None, target, aim: None, slots, slot, returning: false, last: None });
     }
 
     /// Before the drag starts the pointer is tracked by the home body.
@@ -391,25 +487,84 @@ impl Workspace {
         self.home.folders.drag.as_ref().is_some_and(|d| d.started && d.id == id)
     }
 
+    /// The slot under the pointer, or the nearest one across a gap or past the edge.
+    /// Slots are the layout's, fixed for the drag: cards gliding aside never move the targets.
+    fn home_slot_at(d: &HomeDrag, at: Point<Pixels>, grid: bool) -> Option<(usize, Bounds<Pixels>)> {
+        let slots = d.slots.iter().enumerate().filter_map(|(i, (_, b))| b.map(|b| (i, b)));
+        let distance = |b: &Bounds<Pixels>| {
+            let dx = f32::from(at.x - b.center().x); let dy = f32::from(at.y - b.center().y);
+            if grid { dx * dx + dy * dy } else { dy * dy }
+        };
+        slots.clone().find(|(_, b)| b.contains(&at)).or_else(|| slots.min_by(|(_, a), (_, b)| distance(a).total_cmp(&distance(b))))
+    }
+
     fn move_home_drag(&mut self, at: Point<Pixels>, cx: &mut Context<Self>) {
         if !self.home.folders.drag.as_ref().is_some_and(|d| d.started && !d.returning) { return; }
-        // Only folders on the page now: bounds linger for cards of pages left behind.
-        let shown = if self.view == crate::app::View::Folder { self.level_entries(self.folder_current.as_deref()) } else { self.home_entries() };
+        let manual = self.manual_home_sort();
+        let grid = self.home.grid;
+        let entries = &self.entries;
+        let is_folder = |id: &str| entries.iter().any(|e| e.id == id && e.meta.folder.is_some());
         let Some(d) = self.home.folders.drag.as_mut() else { return };
         d.at = at;
-        let over = shown.iter().filter(|e| e.meta.folder.is_some())
-            .find(|e| self.home.folders.bounds.borrow().get(&e.id).is_some_and(|b| b.contains(&at)))
-            .map(|e| e.id.clone());
-        if over != d.over {
-            // The folder notices: a small dip as its mouth opens.
-            if let Some(f) = over.as_ref().and_then(|k| self.home.folders.fx.get_mut(k)) { f.dip.v -= 1.6; }
-            d.over = over;
+        let order = Self::home_drag_order(d);
+        // A folder that took the card keeps it while the pointer stays on it.
+        if let Some(f) = &d.over {
+            let at_folder = order.iter().position(|k| k == f).and_then(|i| d.slots.get(i)?.1);
+            if at_folder.is_some_and(|b| b.dilate(px(10.)).contains(&at)) { cx.notify(); return; }
+            d.over = None;
+        }
+        let Some((slot, b)) = Self::home_slot_at(d, at, grid) else { return };
+        let Some(occupant) = order.get(slot).filter(|k| **k != d.id) else { d.aim = None; cx.notify(); return };
+        // A folder's middle is for dropping in; its rim, like any other card, moves the gap.
+        // Without a manual order there is nothing to reorder, so all of a folder takes the card.
+        let (x, y) = ((at.x - b.left()) / b.size.width, (at.y - b.top()) / b.size.height);
+        // Only a folder's middle takes the card: its rim and every other card make room.
+        let middle = if grid { (0.28..0.72).contains(&x) && (0.26..0.8).contains(&y) } else { (0.3..0.7).contains(&y) };
+        let folder = is_folder(occupant);
+        let join = (folder && (middle || !manual)).then(|| occupant.clone());
+        // How still the pointer must be: a plain card shifts on time alone.
+        let still = if join.is_some() { Some(STILL) } else if folder { Some(RIM) } else { None };
+        if join.is_none() && !manual { d.aim = None; }
+        else if d.aim.as_ref().is_none_or(|a| a.slot != slot || a.join != join) {
+            d.aim = Some(Aim { slot, join, since: Instant::now(), anchor: at });
+        } else if let Some(a) = d.aim.as_mut() && let Some(limit) = still
+            && f32::from(at.x - a.anchor.x).hypot(f32::from(at.y - a.anchor.y)) > limit {
+            // Still travelling over the folder: the rest starts over.
+            a.since = Instant::now(); a.anchor = at;
         }
         cx.notify();
     }
 
+    /// The pointer's rest turns into the gap moving, or the folder taking the card.
+    fn settle_home_aim(&mut self) {
+        let Some(d) = self.home.folders.drag.as_mut().filter(|d| d.started && !d.returning) else { return };
+        let Some(a) = &d.aim else { return };
+        let t = a.since.elapsed().as_secs_f32();
+        match a.join.clone() {
+            Some(f) if t >= JOIN => {
+                d.over = Some(f.clone()); d.aim = None;
+                // The folder notices: a little dip as its mouth opens.
+                if let Some(fx) = self.home.folders.fx.get_mut(&f) { fx.dip.v += 2.5; }
+            }
+            None if t >= SHIFT => { d.target = a.slot; d.aim = None; }
+            _ => {}
+        }
+    }
+
     fn end_home_drag(&mut self, cx: &mut Context<Self>) {
+        let manual = self.manual_home_sort();
         let Some(d) = self.home.folders.drag.as_mut().filter(|d| d.started && !d.returning) else { self.home.folders.drag = None; return };
+        // Let go before a folder took the card: it lands in the slot under the pointer;
+        // without a manual order, on a folder it goes in.
+        if d.over.is_none() && let Some(a) = d.aim.take() {
+            if manual { d.target = a.slot; } else { d.over = a.join; }
+        }
+        let source = d.slots.iter().position(|(k, _)| *k == d.id);
+        if d.over.is_none() && manual && source.is_some_and(|s| s != d.target) {
+            let before = d.slots.iter().map(|(k, _)| k).filter(|k| **k != d.id).nth(d.target).cloned();
+            let id = d.id.clone(); self.settle_home_motion(false); self.home.folders.drag = None;
+            self.reorder_home_item(&id, before, cx); return;
+        }
         let target = d.over.clone().and_then(|f| self.home.folders.bounds.borrow().get(&f).copied().map(|b| (f, b)));
         let Some((folder, b)) = target else {
             // Not over a folder: the paper flies back and becomes the card again.
@@ -422,6 +577,7 @@ impl Workspace {
         // Hand the paper to the folder where it is; it slides in behind the glass.
         let [x, y, w, h] = d.rect.p;
         let local = [x - f32::from(b.left()), y - f32::from(b.top()), w, h];
+        self.settle_home_motion(true);
         self.home.folders.drag = None;
         let fx = self.home.folders.fx.entry(folder.clone()).or_insert_with(FolderFx::new);
         fx.arrival = Some((id.clone(), Spring::new(local)));
@@ -432,24 +588,38 @@ impl Workspace {
 
     pub(crate) fn render_home_drag_overlay(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<AnyElement> {
         if !matches!(self.view, crate::app::View::Home | crate::app::View::Folder) { self.home.folders.drag = None; return None; }
+        self.settle_home_aim();
+        let offsets = self.home_drag_offsets();
+        let manual = self.manual_home_sort();
         let folder_bounds = self.home.folders.drag.as_ref().and_then(|d| d.over.clone()).and_then(|f| self.home.folders.bounds.borrow().get(&f).copied());
         let d = self.home.folders.drag.as_mut().filter(|d| d.started)?;
         let now = Instant::now();
         let dt = d.last.replace(now).map_or(1. / 120., |t| now.duration_since(t).as_secs_f32().min(0.032));
         if !d.returning {
-            let (mut x, mut y) = (f32::from(d.at.x) - d.grab.0 * MINI_W, f32::from(d.at.y) - d.grab.1 * MINI_H);
+            let (width, height) = if manual && d.over.is_none() { (f32::from(d.home.size.width) * 0.94, f32::from(d.home.size.height) * 0.94) } else { (MINI_W, MINI_H) };
+            let (mut x, mut y) = (f32::from(d.at.x) - d.grab.0 * width, f32::from(d.at.y) - d.grab.1 * height);
             if let Some(b) = folder_bounds {
                 // Drawn toward the folder's mouth, held just above the glass.
                 let (fx, fy) = (f32::from(b.center().x) - MINI_W / 2., f32::from(b.top()) + 0.56 * f32::from(b.size.height) - MINI_H);
                 x += (fx - x) * 0.45; y += (fy - y) * 0.45;
             }
-            d.rect.target = [x, y, MINI_W, MINI_H];
+            d.rect.target = [x, y, width, height];
         }
         let moving = d.rect.step(dt);
+        if !d.returning && d.over.is_none() {
+            d.rect.p[0] = f32::from(d.at.x) - d.grab.0 * d.rect.p[2];
+            d.rect.p[1] = f32::from(d.at.y) - d.grab.1 * d.rect.p[3];
+        }
+        if let Some(origin) = d.slots.iter().find(|(id, _)| id == &d.id).and_then(|(_, b)| *b) {
+            let offset = offsets.get(&d.id).copied().unwrap_or([0., 0.]);
+            d.slot.target = [f32::from(origin.left()) + offset[0], f32::from(origin.top()) + offset[1], f32::from(origin.size.width), f32::from(origin.size.height)];
+        }
+        d.slot.step(dt);
         if d.returning && !moving { self.home.folders.drag = None; cx.notify(); return None; }
         window.request_animation_frame();
         let [x, y, w, h] = d.rect.p;
         let e = self.entries.iter().find(|e| e.id == d.id)?.clone();
+        let placeholder = (manual && !d.returning && d.over.is_none()).then_some(d.slot.p);
         let page = self.thumb_page(&e, 12.);
         let seed = seed(&e.id);
         let paper = Paper { cx: w / 2., cy: h / 2., w, h, rot: 0., seed };
@@ -460,6 +630,7 @@ impl Workspace {
                 w.move_home_drag(ev.position, cx);
             }))
             .on_mouse_up(MouseButton::Left, cx.listener(|w, _, _, cx| w.end_home_drag(cx)))
+            .when_some(placeholder, |d, [x,y,w,h]| d.child(div().absolute().left(px(x)).top(px(y)).w(px(w)).h(px(h)).rounded(px(16.)).bg(Theme::sidebar_drop_slot())))
             .child(div().absolute().left(px(x)).top(px(y)).w(px(w)).h(px(h))
                 .shadow(theme::shadow_panel()).rounded(px(10.))
                 .child(lines)

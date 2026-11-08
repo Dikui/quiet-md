@@ -30,6 +30,8 @@ impl SharedStore {
     pub fn rename(&mut self, id: &str, title: &str) -> Result<Meta> { self.0.borrow_mut().rename(id, title) }
     pub fn touch(&mut self, id: &str) -> Option<Meta> { self.0.borrow_mut().touch(id) }
     pub fn create_folder(&mut self, title: &str, parent: Option<&str>) -> Result<String> { self.0.borrow_mut().create_folder(title, parent) }
+    pub fn accept_file_title(&self, id: &str, title: &str) -> Result<()> { self.0.borrow().accept_file_title(id, title) }
+    pub fn initialize_manual_order(&mut self) -> Result<()> { self.0.borrow_mut().initialize_manual_order() }
     pub fn tree_writer(&self) -> Store { self.0.borrow().tree_writer() }
     pub fn set_parent(&mut self, id: &str, parent: Option<&str>) -> Result<Meta> { self.0.borrow_mut().set_parent(id, parent) }
     pub fn set_starred(&mut self, id: &str, on: bool) -> Result<u64> { self.0.borrow_mut().set_starred(id, on) }

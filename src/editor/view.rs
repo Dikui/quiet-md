@@ -525,6 +525,12 @@ impl Editor {
         }
     }
 
+    pub(crate) fn receive_file_title(&mut self, title: &str, cx: &mut Context<Self>) {
+        self.core.receive_file_title(title);
+        self.keep_read_only_title();
+        cx.notify();
+    }
+
     pub fn set_title(&mut self, title: &str, cx: &mut Context<Self>) {
         if self.core.doc.title.text == title {
             return;

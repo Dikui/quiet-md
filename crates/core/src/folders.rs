@@ -58,6 +58,32 @@ impl Store {
         Ok(id)
     }
 
+    pub fn initialize_manual_order(&mut self) -> Result<()> {
+        let _lock = self.begin_write()?;
+        let mut settings = self.settings();
+        let initialized = settings.home_manual_initialized;
+        let previous = self.index.clone();
+        let mut groups: HashMap<Option<String>, Vec<String>> = HashMap::new();
+        for (id, m) in &self.index { groups.entry(m.parent.clone()).or_default().push(id.clone()); }
+        let mut changed = false;
+        for (parent, mut ids) in groups {
+            let rank = |id: &String| { let m = &self.index[id]; if parent.is_none() { m.root_order.unwrap_or(0) } else { m.order } };
+            let offset = if initialized { ids.iter().map(&rank).max().unwrap_or(0) } else { 0 };
+            if initialized { ids.retain(|id| rank(id) == 0); }
+            changed |= !ids.is_empty();
+            ids.sort_by(|a, b| self.index[b].modified.cmp(&self.index[a].modified).then(a.cmp(b)));
+            for (i, id) in ids.iter().enumerate() {
+                let m = self.index.get_mut(id).unwrap();
+                if parent.is_none() { m.root_order = Some(offset + i as u64 + 1); }
+                else { m.order = offset + i as u64 + 1; m.root_order = None; }
+            }
+        }
+        if !changed && initialized { return Ok(()); }
+        if let Err(e) = self.save_index() { self.index = previous; return Err(e); }
+        settings.home_manual_initialized = true;
+        self.save_settings(&settings)
+    }
+
     /// Persist one drop atomically; neither document content nor timestamps change.
     pub fn move_in_tree(&mut self, id: &str, parent: Option<&str>, before: Option<&str>) -> Result<()> {
         let _lock = self.begin_write()?;

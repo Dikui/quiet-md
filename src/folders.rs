@@ -6,11 +6,13 @@ use gpui::*;
 
 impl Workspace {
     pub(crate) fn new_root_doc(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let file_before = self.entries.clone();
         if !self.save_before(cx, |w, window, cx| w.new_root_doc(window, cx)) { return; }
         match self.store.create() {
             Ok((id, _)) => { self.entries = self.store.list(); self.sort(); self.folded[1] = false; self.open(&id, window, cx); }
             Err(e) => self.show_toast_kind(crate::ui::ToastKind::Error, &e.to_string(), cx),
         }
+        self.remember_files(file_before, crate::settings::tr("新建文档", "New document"));
         cx.notify();
     }
 
@@ -50,6 +52,8 @@ impl Workspace {
         self.editor = None;
         self.current = None;
         if self.folder_current.as_deref() != Some(id) { self.reset_folder_scroll(); }
+        if let Some(meta) = self.store.touch(id) && let Some(entry) = self.entries.iter_mut().find(|e| e.id == id) { entry.meta = meta; }
+        if self.manual_home_sort() { self.prepare_manual_order(cx); }
         self.folder_current = Some(id.to_string());
         self.view = View::Folder;
         self.row_menu = None;
@@ -63,6 +67,7 @@ impl Workspace {
     }
 
     pub(crate) fn new_folder(&mut self, parent: Option<String>, window: &mut Window, cx: &mut Context<Self>) {
+        let file_before = self.entries.clone();
         self.create_menu = None;
         match self.store.create_folder(tr("未命名文件夹", "Untitled folder"), parent.as_deref()) {
             Ok(id) => {
@@ -73,6 +78,7 @@ impl Workspace {
             }
             Err(e) => self.show_toast_kind(crate::ui::ToastKind::Error, &e.to_string(), cx),
         }
+        self.remember_files(file_before, crate::settings::tr("新建文件夹", "New folder"));
         cx.notify();
     }
 

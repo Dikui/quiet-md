@@ -81,6 +81,7 @@ impl Workspace {
 
     /// 创建副本: "<标题> 副本", opened right away.
     pub fn duplicate_doc(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let file_before = self.entries.clone();
         self.close_doc_menu(cx);
         self.row_menu = None;
         if let Some(new) = self.copy_doc(id, cx) {
@@ -88,6 +89,7 @@ impl Workspace {
             self.sort();
             self.open(&new, window, cx);
         }
+        self.remember_files(file_before, crate::settings::tr("创建副本", "Duplicate"));
         cx.notify();
     }
 
