@@ -105,10 +105,22 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Windows build failed' }
           & python scripts/check.py
           if ($LASTEXITCODE -ne 0) { throw 'Windows checks failed' }
+          & scripts/package-windows.ps1 -Iscc "${env:ProgramFiles(x86)}/Inno Setup 6/ISCC.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'Windows packaging failed' }
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-x64-package
+          path: |
+            dist/windows/unsigned/quiet-md-*-windows-x64-setup.exe
+            dist/windows/unsigned/quiet-md-*-windows-x64-setup.exe.sha256
+          if-no-files-found: error
+          retention-days: 14
 
   linux-build:
     name: Linux x64 build + checks
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -133,3 +145,14 @@ jobs:
 
       - name: Verify Linux package
         run: scripts/package-linux.sh
+
+      - name: Build and inspect AppImage
+        run: scripts/package-appimage.sh
+
+      - name: Upload Linux packages
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: linux-x86_64-packages
+          path: dist/linux/*
+          if-no-files-found: error
+          retention-days: 14

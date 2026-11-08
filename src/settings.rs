@@ -48,8 +48,19 @@ pub struct Preferences {
     pub motion: String,
 }
 
+/// Pick the first supported system language; saved preferences still win.
+fn system_english() -> bool {
+    sys_locale::get_locales().find_map(|locale| {
+        match locale.split(['-', '_']).next().unwrap_or("").to_ascii_lowercase().as_str() {
+            "zh" => Some(false),
+            "en" => Some(true),
+            _ => None,
+        }
+    }).unwrap_or(true)
+}
+
 impl Default for Preferences {
-    fn default() -> Self { Preferences { theme: String::new(), feishu: true, english: true, remote_images: true, quick_hotkey: true, auto_update: true, appearance: String::new(), seen_version: String::new(), motion: String::new() } }
+    fn default() -> Self { Preferences { theme: String::new(), feishu: true, english: system_english(), remote_images: true, quick_hotkey: true, auto_update: true, appearance: String::new(), seen_version: String::new(), motion: String::new() } }
 }
 
 impl Preferences {
