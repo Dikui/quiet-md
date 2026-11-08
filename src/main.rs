@@ -19,6 +19,7 @@ mod devtools {
     pub fn scripted() -> bool { false }
     pub fn start(_: &mut gpui::Window, _: &mut gpui::App) {}
     pub fn take_pick() -> Option<Vec<std::path::PathBuf>> { None }
+    pub fn file_drag() -> bool { false }
 }
 mod docinfo;
 mod docmenu;
@@ -37,6 +38,7 @@ mod native_header;
 mod printing;
 mod search;
 mod sidebar;
+mod local_files;
 mod sidebar_drag;
 mod home_folder;
 mod folders;
@@ -120,6 +122,10 @@ fn main() {
         logging::fatal(&format!("无法初始化文档库 / Could not set up the library at {}", root.display()), &err);
     }
     let app = Application::new().with_assets(assets::Assets);
+    // Markdown files opened from the Finder or the command line are edited in place.
+    let incoming = local_files::Incoming::from_args();
+    let urls = incoming.clone();
+    app.on_open_urls(move |u| urls.push_urls(u));
     // macOS keeps running after ⌘W closes the last window (quick notes stay
     // available); clicking the Dock icon then brings the main window back.
     app.on_reopen(|cx| if cx.windows().is_empty() { open_main_window(false, cx); });
@@ -147,6 +153,7 @@ fn main() {
         app::set_menus(cx);
         update::init(cx);
         open_main_window(scripted, cx);
+        incoming.deliver(cx);
         cx.on_window_closed(move |cx| {
             if (!quick_enabled || !cfg!(target_os = "macos")) && cx.windows().is_empty() {
                 cx.quit();

@@ -750,7 +750,17 @@ fn table(n: &Handle, ctx: &Ctx) -> Option<Block> {
 pub fn markdown_to_blocks(text: &str, off: Off) -> Vec<Block> {
     let text = text.replace("\r\n", "\n").replace('\r', "\n");
     let lines: Vec<&str> = text.trim_end_matches('\n').split('\n').collect();
-    md_blocks(&lines, off)
+    md_blocks(&lines, off, None)
+}
+
+/// `markdown_to_blocks`, and the lines (`[start, end)` of `text` split at
+/// `\n`, CRs removed) each top-level block was read from.
+pub fn markdown_to_blocks_with_lines(text: &str, off: Off) -> (Vec<Block>, Vec<(usize, usize)>) {
+    let text = text.replace("\r\n", "\n").replace('\r', "\n");
+    let lines: Vec<&str> = text.trim_end_matches('\n').split('\n').collect();
+    let mut spans = vec![];
+    let blocks = md_blocks(&lines, off, Some(&mut spans));
+    (blocks, spans)
 }
 
 /// Inline rules only (pasting into a non-empty block): one block per line.
@@ -784,6 +794,8 @@ pub struct Off {
     /// Importing a whole file: blank lines only separate blocks, and a line
     /// holding just `![alt](src)` is an image.
     pub file: bool,
+    /// A Markdown file edited as itself: an image keeps its alt text (as its caption).
+    pub alt: bool,
 }
 
 fn indent_of(line: &str) -> usize {
@@ -866,12 +878,17 @@ fn todo_prefix(s: &str) -> Option<(bool, &str)> {
     None
 }
 
-fn md_blocks(lines: &[&str], off: Off) -> Vec<Block> {
+fn md_blocks(lines: &[&str], off: Off, mut spans: Option<&mut Vec<(usize, usize)>>) -> Vec<Block> {
     let mut out: Vec<Block> = vec![];
     let mut i = 0;
     // Ordered items continue the previous item's numbering.
     let mut last_list = false;
-    while i < lines.len() {
+    // Each pass adds at most one block: (blocks, line) when the pass began.
+    let mut mark = (0, 0);
+    loop {
+        if let Some(s) = spans.as_deref_mut() && out.len() > mark.0 { s.push((mark.1, i)); }
+        mark = (out.len(), i);
+        if i >= lines.len() { break; }
         let line = lines[i];
         // Blank lines are empty paragraphs (none before the first block).
         if line.trim().is_empty() {
@@ -938,7 +955,7 @@ fn md_blocks(lines: &[&str], off: Off) -> Vec<Block> {
                     }
                 },
             };
-            out.push(Block::new(kind, md_inline(text.trim())).with_children(md_blocks(&sub, off)));
+            out.push(Block::new(kind, md_inline(text.trim())).with_children(md_blocks(&sub, off, None)));
             last_list = true;
             i = j;
             continue;
@@ -968,7 +985,7 @@ fn md_blocks(lines: &[&str], off: Off) -> Vec<Block> {
                 sub.push(r);
                 i += 1;
             }
-            let kids = md_blocks(&sub, Off { quote: true, ..off });
+            let kids = md_blocks(&sub, Off { quote: true, ..off }, None);
             if !kids.is_empty() {
                 out.push(Block::new(BlockKind::Quote, RichText::default()).with_children(kids));
             }
@@ -979,9 +996,10 @@ fn md_blocks(lines: &[&str], off: Off) -> Vec<Block> {
             i += n;
             continue;
         }
-        if let Some(src) = image_line(body).filter(|_| off.file) {
+        if let Some((alt, src)) = image_line(body).filter(|_| off.file) {
+            let caption = (off.alt && !alt.is_empty()).then(|| md_inline(alt).text);
             let mut b = Block::new(
-                BlockKind::Image { src_kind: "src".into(), src: src.to_string(), width: None, height: None, caption: None, crop: None },
+                BlockKind::Image { src_kind: "src".into(), src: src.to_string(), width: None, height: None, caption, crop: None },
                 RichText::default(),
             );
             b.align = crate::model::Align::Center;
@@ -996,14 +1014,14 @@ fn md_blocks(lines: &[&str], off: Off) -> Vec<Block> {
     out
 }
 
-/// `![alt](src "title")` filling the whole line: its src.
-fn image_line(s: &str) -> Option<&str> {
+/// `![alt](src "title")` filling the whole line: its alt and src.
+fn image_line(s: &str) -> Option<(&str, &str)> {
     let rest = s.strip_prefix("![")?;
-    let (_, tail) = rest.split_once("](")?;
+    let (alt, tail) = rest.split_once("](")?;
     let inner = tail.strip_suffix(')')?;
     let src = inner.split_once([' ', '\t']).map_or(inner, |(a, _)| a);
     let src = src.trim_start_matches('<').trim_end_matches('>');
-    (!src.is_empty() && !inner.contains(')')).then_some(src)
+    (!src.is_empty() && !inner.contains(')')).then_some((alt, src))
 }
 
 fn quote_line(s: &str) -> Option<&str> {
@@ -1112,6 +1130,13 @@ pub fn md_inline(s: &str) -> RichText {
         let rest = &s[i..];
         let c = rest.chars().next().unwrap();
         let prev = s[..i].chars().next_back();
+        // `\*`, `\_`, `\<` …: the character itself (CommonMark), which is how
+        // Markdown export writes them.
+        if c == '\\' && let Some(next) = rest[1..].chars().next().filter(char::is_ascii_punctuation) {
+            plain.push(next);
+            i += 1 + next.len_utf8();
+            continue;
+        }
         // Code span.
         if c == '`' {
             let n = rest.bytes().take_while(|&b| b == b'`').count();

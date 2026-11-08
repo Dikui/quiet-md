@@ -9,7 +9,7 @@ use crate::model::{Block, BlockKind, Document, RichText};
 use crate::printing::{self, Job};
 use crate::theme::Theme;
 use crate::trash::{close_button, dialog, primary_button, scrim, secondary_button};
-use crate::ui::ToastKind;
+use crate::ui::{TipExt, ToastKind};
 use gpui::{prelude::FluentBuilder, *};
 use std::path::{Path, PathBuf};
 
@@ -20,6 +20,43 @@ pub struct ExportMd {
 }
 
 const MARKDOWN_EXTS: [&str; 4] = ["md", "markdown", "mark", "txt"];
+
+/// What the header's 导入 menu picks.
+#[derive(Clone, Copy)]
+pub(crate) enum ImportKind { Markdown, Folder, DocxXml }
+
+/// 导入文件夹 refuses folders with more documents than this.
+const IMPORT_FOLDER_LIMIT: usize = 2000;
+/// Bigger files are not documents.
+const IMPORT_FILE_LIMIT: u64 = 32 * 1024 * 1024;
+
+/// A folder to import: its documents and the sub-folders that hold some.
+struct Scanned { name: String, dirs: Vec<Scanned>, docs: Vec<PathBuf>, files: usize }
+
+/// Markdown and DocxXML files under `dir`, by name; hidden folders,
+/// dependency folders and symlinks are skipped.
+fn scan_folder(dir: &Path, depth: usize) -> Option<Scanned> {
+    let name = dir.file_name()?.to_string_lossy().into_owned();
+    let mut t = Scanned { name, dirs: vec![], docs: vec![], files: 0 };
+    if depth > 32 { return Some(t); }
+    let mut items: Vec<_> = std::fs::read_dir(dir).ok()?.flatten().collect();
+    items.sort_by_key(|e| e.file_name().to_string_lossy().to_lowercase());
+    for e in items {
+        let p = e.path();
+        let n = e.file_name().to_string_lossy().into_owned();
+        let Ok(ft) = e.file_type() else { continue };
+        if n.starts_with('.') || ft.is_symlink() { continue; }
+        if ft.is_dir() {
+            if matches!(n.as_str(), "node_modules" | "target") { continue; }
+            if let Some(sub) = scan_folder(&p, depth + 1).filter(|s| s.files > 0) { t.files += sub.files; t.dirs.push(sub); }
+        } else if crate::local_files::is_markdown_path(&p) || p.extension().is_some_and(|x| x.eq_ignore_ascii_case("xml")) {
+            t.docs.push(p);
+            t.files += 1;
+        }
+        if t.files > IMPORT_FOLDER_LIMIT { break; }
+    }
+    Some(t)
+}
 
 fn downloads() -> PathBuf {
     std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Downloads")).unwrap_or_default()
@@ -276,39 +313,176 @@ impl Workspace {
         let paths = open_paths(cx);
         cx.spawn_in(window, async move |this, cx| {
             let Some(paths) = paths.await else { return };
-            let _ = this.update_in(cx, |w, window, cx| w.import_files(&paths, window, cx));
+            let _ = this.update_in(cx, |w, window, cx| w.import_paths(&paths, None, true, window, cx));
         })
         .detach();
     }
 
-    fn import_files(&mut self, paths: &[PathBuf], window: &mut Window, cx: &mut Context<Self>) {
-        let again = paths.to_vec();
-        if !self.save_before(cx, move |w, window, cx| w.import_files(&again, window, cx)) {
+    /// Import files into `parent` (a folder; None: the top of 我的文档); with
+    /// `open`, the last one opens (a drop on a list stays on the list).
+    pub(crate) fn import_paths(&mut self, paths: &[PathBuf], parent: Option<String>, open: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let (again, retry) = (paths.to_vec(), parent.clone());
+        if !self.save_before(cx, move |w, window, cx| w.import_paths(&again, retry.clone(), open, window, cx)) {
             return;
         }
         let mut last = None;
         let mut failed = false;
+        let file_before = self.store.track_file_changes();
         for p in paths {
             let ext = p.extension().and_then(|s| s.to_str()).unwrap_or_default().to_ascii_lowercase();
             let made = match ext.as_str() {
+                _ if crate::local_files::is_markdown_path(p) => self.import_markdown(p, None),
                 e if MARKDOWN_EXTS.contains(&e) => markdown_document(p).map_err(anyhow::Error::from).and_then(|doc| self.store.create_from(&doc)),
                 "xml" => self.store.import(p),
                 _ => Err(anyhow::anyhow!("文件格式不支持")),
+            };
+            let made = match (made, parent.as_deref()) {
+                (Ok(id), Some(folder)) => self.store.set_parent(&id, Some(folder)).map(|_| id),
+                (made, _) => made,
             };
             match made {
                 Ok(id) => last = Some(id),
                 Err(_) => failed = true,
             }
         }
+        self.remember_files(file_before, crate::settings::tr("导入", "Import"));
         self.entries = self.store.list();
         self.sort();
-        if let Some(id) = last {
+        if let Some(id) = last.filter(|_| open) {
             self.open(&id, window, cx);
         }
         if failed {
             self.show_toast_kind(ToastKind::Error, crate::settings::text("导入失败，请检查文件格式"), cx);
         }
         cx.notify();
+    }
+
+    /// The header's 导入 menu (主页, a folder's page): what it imports goes
+    /// into the folder shown, or the top of 我的文档.
+    pub(crate) fn open_import_kind(&mut self, kind: ImportKind, parent: Option<String>, window: &mut Window, cx: &mut Context<Self>) {
+        self.close_menus();
+        self.import_menu = None;
+        cx.notify();
+        let picked = crate::devtools::take_pick();
+        let (folders, extensions): (bool, &[&str]) = match kind {
+            ImportKind::Markdown => (false, &["md", "markdown", "mdown"]),
+            ImportKind::Folder => (true, &[]),
+            ImportKind::DocxXml => (false, &["xml"]),
+        };
+        let options = PathPromptOptions {
+            files: !folders, directories: folders, multiple: !folders, prompt: Some(crate::settings::text("导入").into()),
+            extensions: (!folders).then(|| extensions.iter().map(|e| SharedString::from(*e)).collect()),
+        };
+        let prompt = picked.is_none().then(|| cx.prompt_for_paths(options));
+        cx.spawn_in(window, async move |this, cx| {
+            let paths = match prompt {
+                Some(p) => p.await.ok().and_then(Result::ok).flatten(),
+                None => picked,
+            };
+            let Some(paths) = paths.filter(|p| !p.is_empty()) else { return };
+            let _ = this.update_in(cx, |w, window, cx| match kind {
+                ImportKind::Folder => w.import_folder(&paths[0], parent.clone(), true, window, cx),
+                _ => w.import_paths(&paths, parent.clone(), true, window, cx),
+            });
+        })
+        .detach();
+    }
+
+    /// The 导入 menu under the header icon.
+    pub(crate) fn render_import_menu(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let (parent, pos) = self.import_menu.clone()?;
+        let row = |id: &'static str, glyph: &'static str, label: &'static str| crate::ui::menu_row(id, SharedString::from(id)).child(crate::ui::icon(glyph, 16., Theme::icon())).child(label);
+        let item = |id: &'static str, glyph: &'static str, label: &'static str, kind: ImportKind| {
+            let parent = parent.clone();
+            row(id, glyph, label).on_click(cx.listener(move |w, _, window, cx| w.open_import_kind(kind, parent.clone(), window, cx)))
+        };
+        Some(deferred(anchored().anchor(Corner::TopRight).position(pos).snap_to_window_with_margin(px(8.)).child(
+            crate::ui::popover().id("import-items").occlude().w(px(210.)).py(px(crate::ui::MENU_PAD_Y))
+                .on_mouse_down_out(cx.listener(|w, _, _, cx| { w.import_menu = None; cx.notify(); }))
+                .child(item("import-md", "doc-md", crate::settings::tr("导入 Markdown 文件…", "Import Markdown Files…"), ImportKind::Markdown))
+                .child(item("import-folder", "folder", crate::settings::tr("导入文件夹…", "Import Folder…"), ImportKind::Folder))
+                .child(item("import-xml", "doc", crate::settings::tr("导入 DocxXML…", "Import DocxXML…"), ImportKind::DocxXml)),
+        )).with_priority(3).into_any_element())
+    }
+
+    /// The header's 导入 icon; its menu hangs below it, right-aligned.
+    pub(crate) fn import_button(&self, id: &'static str, parent: Option<String>, cx: &mut Context<Self>) -> Stateful<Div> {
+        let open = self.import_menu.is_some();
+        crate::ui::header_icon(id, "import")
+            .when(open, |d| d.bg(Theme::fill_hover()))
+            .tip(crate::settings::tr("导入", "Import"), None)
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_click(cx.listener(move |w, ev: &ClickEvent, _, cx| {
+                w.import_menu = if w.import_menu.is_some() { None } else { Some((parent.clone(), ev.position() + point(px(18.), px(20.)))) };
+                cx.notify();
+            }))
+    }
+
+    /// A Markdown file copied into the library, still Markdown: its local
+    /// images are copied into the library's assets.
+    fn import_markdown(&mut self, path: &Path, parent: Option<&str>) -> anyhow::Result<String> {
+        let bytes = crate::store::read_bounded(path, IMPORT_FILE_LIMIT)?;
+        let text = String::from_utf8_lossy(&bytes);
+        let text = text.trim_start_matches('\u{feff}');
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or_default().trim().to_string();
+        let mut doc = crate::markdown::parse_file(text, &stem, path.parent());
+        crate::editor::image::localize_pasted_images(&mut doc.blocks);
+        if doc.blocks.is_empty() { doc.blocks.push(Block::text("")); }
+        let id = self.store.create_markdown(&doc, crate::markdown::front_matter(text).0)?;
+        if parent.is_some() { self.store.set_parent(&id, parent)?; }
+        Ok(id)
+    }
+
+    /// 导入文件夹: pick a folder; it lands at the top of 我的文档 as a folder,
+    /// its sub-folders as folders, its Markdown and DocxXML files as documents.
+    pub fn open_import_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_import_kind(ImportKind::Folder, None, window, cx);
+    }
+
+    /// Import `dir` as a folder inside `parent` (None: the top of 我的文档).
+    pub(crate) fn import_folder(&mut self, dir: &Path, parent: Option<String>, open: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let (again, retry) = (dir.to_path_buf(), parent.clone());
+        if !self.save_before(cx, move |w, window, cx| w.import_folder(&again, retry.clone(), open, window, cx)) {
+            return;
+        }
+        let tree = scan_folder(dir, 0);
+        let Some(tree) = tree.filter(|t| t.files > 0) else {
+            self.show_toast_kind(ToastKind::Error, crate::settings::tr("这个文件夹里没有 Markdown 或 XML 文件", "This folder has no Markdown or XML files"), cx);
+            return;
+        };
+        if tree.files > IMPORT_FOLDER_LIMIT {
+            self.show_toast_kind(ToastKind::Error, &crate::localized_format!("文件夹里有 {} 个文件，一次最多导入 {} 个", "The folder has {} files; up to {} can be imported at once", tree.files, IMPORT_FOLDER_LIMIT), cx);
+            return;
+        }
+        let file_before = self.store.track_file_changes();
+        let mut failed = 0;
+        let top = self.import_tree(&tree, parent.as_deref(), &mut failed);
+        self.remember_files(file_before, crate::settings::tr("导入文件夹", "Import folder"));
+        self.entries = self.store.list();
+        self.sort();
+        if let Some(id) = top {
+            self.reveal_in_tree(&id);
+            if open { self.open(&id, window, cx); }
+        }
+        if failed > 0 {
+            self.show_toast_kind(ToastKind::Error, &crate::localized_format!("有 {failed} 个文件未能导入", "{failed} files could not be imported"), cx);
+        }
+        cx.notify();
+    }
+
+    /// One scanned folder as a library folder under `parent`; its id.
+    fn import_tree(&mut self, t: &Scanned, parent: Option<&str>, failed: &mut usize) -> Option<String> {
+        let id = match self.store.create_folder(&t.name, parent) {
+            Ok(id) => id,
+            Err(_) => { *failed += t.files; return None; }
+        };
+        for sub in &t.dirs { self.import_tree(sub, Some(&id), failed); }
+        for p in &t.docs {
+            let made = if crate::local_files::is_markdown_path(p) { self.import_markdown(p, Some(&id)) }
+                else { self.store.import(p).and_then(|doc| self.store.set_parent(&doc, Some(&id)).map(|_| doc)) };
+            if made.is_err() { *failed += 1; }
+        }
+        Some(id)
     }
 
     /// 导出 Markdown 设置 as a modal: white, radius 16, a 15pt semibold

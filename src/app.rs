@@ -22,7 +22,7 @@ use std::time::{Duration, Instant};
 const SAVE_DELAY: Duration = Duration::from_millis(500);
 const SAVE_MAX_DELAY: Duration = Duration::from_secs(2);
 
-actions!(workspace, [NewDoc, ImportDoc, ToggleSidebar, FocusSearch, FindInDoc, ReplaceInDoc, OpenSettings, OpenAbout, CheckForUpdates, GoHome, CloseWindow, Quit,
+actions!(workspace, [NewDoc, OpenFile, ImportDoc, ImportFolder, ToggleSidebar, FocusSearch, FindInDoc, ReplaceInDoc, OpenSettings, OpenAbout, CheckForUpdates, GoHome, CloseWindow, Quit,
     HideApp, HideOthers, ShowAll, Minimize, Zoom, ToggleFullScreen]);
 
 /// The menu bar, in the interface language.
@@ -51,7 +51,9 @@ pub fn set_menus(cx: &mut App) {
             items: vec![
                 MenuItem::action(tr("新建文档", "New Document"), NewDoc),
                 MenuItem::action(tr("新建笔记窗口", "New Note Window"), crate::quick_note::QuickNew),
+                MenuItem::action(tr("打开 Markdown 文件…", "Open Markdown File…"), OpenFile),
                 MenuItem::action(tr("导入为文档…", "Import as Document…"), ImportDoc),
+                MenuItem::action(tr("导入文件夹…", "Import Folder…"), ImportFolder),
                 MenuItem::separator(),
                 MenuItem::action(tr("关闭窗口", "Close Window"), CloseWindow),
             ],
@@ -94,6 +96,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-shift-n", crate::quick_note::QuickNew, None),
         KeyBinding::new("cmd-,", OpenSettings, None),
         KeyBinding::new("cmd-shift-i", ImportDoc, None),
+        KeyBinding::new("cmd-o", OpenFile, None),
         KeyBinding::new("cmd-alt-home", GoHome, None),
         KeyBinding::new("cmd-w", CloseWindow, None),
         KeyBinding::new("cmd-]", ToggleSidebar, None),
@@ -238,6 +241,8 @@ pub struct Workspace {
     pub sidebar_drag: bool,
     pub folder_current: Option<String>,
     pub create_menu: Option<(Option<String>, Point<Pixels>)>,
+    /// The header's 导入 menu: the folder it imports into, and where it hangs.
+    pub import_menu: Option<(Option<String>, Point<Pixels>)>,
     pub folder_drag: crate::sidebar_drag::SidebarDrag,
     /// The search dialog (command-center style) is open.
     pub search_open: bool,
@@ -272,7 +277,7 @@ pub struct Workspace {
     pub toast: Option<(ToastKind, SharedString, Instant)>,
     toast_task: Option<Task<()>>,
     /// Folded sidebar sections: 置顶, 我的文档.
-    pub folded: [bool; 2],
+    pub folded: [bool; 3],
     /// Expanded pages of the 我的文档 tree.
     pub expanded: HashSet<String>,
     pub move_dlg: Option<crate::tree::MoveDialog>,
@@ -417,6 +422,7 @@ impl Workspace {
             sidebar_drag: false,
             folder_current: None,
             create_menu: None,
+            import_menu: None,
             folder_drag: Default::default(),
             search_open: false,
             status: SaveStatus::Idle,
@@ -445,7 +451,7 @@ impl Workspace {
             more_btn_bounds: Rc::new(Cell::new(None)),
             native_sidebar: Default::default(),
             shortcuts: false,
-            folded: [false; 2],
+            folded: [false; 3],
             expanded: HashSet::new(),
             move_dlg: None,
             export_md: None,
@@ -523,6 +529,7 @@ impl Workspace {
         let editor = cx.new(|cx| {
             let mut e = Editor::new(doc, modified, width, window, cx);
             e.cat_pinned = pinned;
+            e.markdown = meta.as_ref().is_some_and(|m| m.markdown);
             if let Some(m) = &meta {
                 e.created = m.created;
                 e.info = m.info;
@@ -1320,7 +1327,9 @@ impl Render for Workspace {
         let resize_overlay = self.render_resize_overlay(cx);
         let folder_drag_overlay = self.render_folder_drag_overlay(cx);
         let home_drag_overlay = self.render_home_drag_overlay(window, cx);
+        let file_drop = self.render_file_drop(window, cx);
         let create_menu = self.render_create_menu(cx);
+        let import_menu = self.render_import_menu(cx);
         let search = self.render_search(window, cx);
         let doc_menu = self.render_doc_menu(window, cx);
         let doc_info = self.render_doc_info(cx);
@@ -1367,7 +1376,12 @@ impl Render for Workspace {
         // them (no gutter, radius, border or shadow).
         // A document sits on its theme's page colour.
         let page = if self.view == View::Doc { crate::editor_theme::Theme::bg_body() } else { Theme::bg_body() };
-        let note = div().id("note").relative().flex_1().min_w_0().h_full().flex().bg(page).child(main);
+        let note = div().id("note").relative().flex_1().min_w_0().h_full().flex().bg(page).child(main)
+            // Files from the Finder dropped on 主页 or a folder's page are imported there.
+            .when(matches!(self.view, View::Home | View::Folder), |d| d
+                .on_drag_move(cx.listener(|w, ev: &DragMoveEvent<ExternalPaths>, _, cx| w.file_drag_move(ev, cx)))
+                .on_drop(cx.listener(|w, paths: &ExternalPaths, window, cx| w.file_dropped(paths, window, cx))))
+            .children(file_drop);
         div()
             .id("workspace")
             .key_context("Workspace")
@@ -1404,6 +1418,8 @@ impl Render for Workspace {
             .on_action(cx.listener(|w, _: &GoHome, _, cx| w.show_view(View::Home, cx)))
             .on_action(cx.listener(|w, _: &NewDoc, window, cx| w.new_doc(window, cx)))
             .on_action(cx.listener(|w, _: &ImportDoc, window, cx| w.open_import(window, cx)))
+            .on_action(cx.listener(|w, _: &OpenFile, window, cx| w.open_file_dialog(window, cx)))
+            .on_action(cx.listener(|w, _: &ImportFolder, window, cx| w.open_import_folder(window, cx)))
             .on_action(cx.listener(|w, _: &ToggleSidebar, _, cx| {
                 w.sidebar_open = !w.sidebar_open;
                 cx.notify();
@@ -1496,6 +1512,7 @@ impl Render for Workspace {
                 .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())).with_priority(20)))
             .children(home_drag_overlay)
             .children(create_menu)
+            .children(import_menu)
             .children(toast)
     }
 }

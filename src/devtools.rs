@@ -7,6 +7,7 @@
 //!   key press through AppKit, so the active input method sees it) |
 //!   activate (make the window key; takes focus) | quit |
 //!   pick <path>[|<path>...] (answers the next file dialog instead of showing it)
+//!   filedrag x y <path>[|<path>...] / filedrop x y / fileleave (files dragged in from the Finder)
 //! For profiling: bench <n> <step> (runs the step n times, drawing a frame
 //!   synchronously after each, and prints step / frame / editor-render times) |
 //!   wheel x y dy [dx] (one scroll-wheel event; dx: sideways component).
@@ -37,6 +38,11 @@ static CURSOR_LOG: Mutex<Option<(Instant, std::fs::File)>> = Mutex::new(None);
 static PICK: Mutex<Option<Vec<std::path::PathBuf>>> = Mutex::new(None);
 
 /// The scripted answer to the next open / save dialog, if any.
+/// Files a script is dragging over the window (`filedrag`), as the Finder would.
+static FILE_DRAG: std::sync::Mutex<Option<Vec<std::path::PathBuf>>> = std::sync::Mutex::new(None);
+
+pub fn file_drag() -> bool { FILE_DRAG.lock().unwrap().is_some() }
+
 pub fn take_pick() -> Option<Vec<std::path::PathBuf>> {
     PICK.lock().unwrap().take()
 }
@@ -221,6 +227,28 @@ pub fn start(window: &mut Window, cx: &mut App) {
                 cx.update(|cx| {
                     let handle = cx.windows().into_iter().find_map(|w| w.downcast::<crate::app::Workspace>()).unwrap();
                     handle.update(cx, |ws, window, cx| ws.check_export_safety(window, cx)).unwrap();
+                }).unwrap();
+                continue;
+            }
+            // `filedrag x y a|b`, `filedrop x y`, `fileleave`: files dragged in from the Finder.
+            if matches!(cmd, "filedrag" | "filedrop" | "fileleave") {
+                let mut it = rest.trim().splitn(3, ' ');
+                let x: f32 = it.next().and_then(|v| v.parse().ok()).unwrap_or(0.);
+                let y: f32 = it.next().and_then(|v| v.parse().ok()).unwrap_or(0.);
+                let at = point(px(x), px(y));
+                if cmd == "filedrag" {
+                    let paths: Vec<std::path::PathBuf> = it.next().unwrap_or("").split('|').filter(|p| !p.is_empty()).map(std::path::PathBuf::from).collect();
+                    *FILE_DRAG.lock().unwrap() = Some(paths);
+                }
+                let paths = if cmd == "fileleave" { FILE_DRAG.lock().unwrap().take(); None } else { FILE_DRAG.lock().unwrap().clone() };
+                let drop = cmd == "filedrop";
+                cx.update(|cx| {
+                    let handle = cx.windows().into_iter().find_map(|w| w.downcast::<crate::app::Workspace>()).unwrap();
+                    handle.update(cx, |ws, window, cx| match paths {
+                        Some(p) if drop => { FILE_DRAG.lock().unwrap().take(); ws.file_drag_at(at, p.clone(), cx); ws.file_drop_paths(p, window, cx); }
+                        Some(p) => ws.file_drag_at(at, p, cx),
+                        None => cx.notify(),
+                    }).unwrap();
                 }).unwrap();
                 continue;
             }

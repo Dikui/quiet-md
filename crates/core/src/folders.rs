@@ -4,13 +4,13 @@ impl Store {
     /// Independent handle for background tree writes; begin_write reloads under the library lock.
     pub fn tree_writer(&self) -> Self {
         Self { file_changes: vec![], root: self.root.clone(), index: self.index.clone(), trash: HashMap::new(),
-            loaded: Default::default(), parsed: HashMap::new(), warnings: vec![] }
+            loaded: Default::default(), copied: Default::default(), parsed: HashMap::new(), warnings: vec![] }
     }
 
     pub(super) fn migrate_folders(&mut self) -> Result<()> {
         let _lock = self.begin_write()?;
         let marker: FormatMarker = serde_json::from_slice(&std::fs::read(self.root.join("format.json"))?)?;
-        if marker.format < FORMAT {
+        if marker.format < BASE_FORMAT {
             let backup = self.root.join("index.before-folders.json");
             if !backup.exists() { write_atomic(&backup, &serde_json::to_vec_pretty(&self.index)?)?; }
         }
@@ -48,7 +48,7 @@ impl Store {
             if let Err(e) = self.save_index() { self.index = previous; return Err(e); }
             self.record_tree_changes(&previous);
         }
-        write_atomic(&self.root.join("format.json"), &serde_json::to_vec_pretty(&FormatMarker { format: FORMAT })?)?;
+        if marker.format < BASE_FORMAT { write_atomic(&self.root.join("format.json"), &serde_json::to_vec_pretty(&FormatMarker { format: BASE_FORMAT })?)?; }
         Ok(())
     }
 

@@ -9,7 +9,7 @@ mod bs;
 #[path = "home_text.rs"]
 mod text_preview;
 #[path = "home_scrollbar.rs"]
-mod scrollbar;
+pub(crate) mod scrollbar;
 use crate::settings::display_title;
 use crate::model::BlockKind;
 use crate::search::doc_icon;
@@ -309,6 +309,8 @@ pub struct Home {
     folder_list_scroll: ScrollHandle,
     grid_scrollbar: Rc<scrollbar::Scrollbar>,
     list_scrollbar: Rc<scrollbar::Scrollbar>,
+    /// The 搜索 dialog's results (`search.rs`).
+    pub(crate) search_scrollbar: Rc<scrollbar::Scrollbar>,
     sort: HomeSort,
     folders_first: bool,
     pub sort_menu: bool,
@@ -330,6 +332,7 @@ impl Default for Home {
             folder_list_scroll: Default::default(),
             grid_scrollbar: Default::default(),
             list_scrollbar: Default::default(),
+            search_scrollbar: Default::default(),
             // Manual: the sidebar's order (`Meta::place`), so both lists read the same.
             sort: HomeSort::Manual,
             folders_first: false,
@@ -396,6 +399,7 @@ fn weight3(mut d: Div) -> Div {
 fn entry_icon(e: &Entry) -> AnyElement {
     if e.meta.folder.is_some() { return icon("folder", 22., Theme::icon()).mr(px(13.)).into_any_element(); }
     match &e.icon {
+        _ if e.meta.markdown => crate::search::doc_icon_named("doc-md").mr(px(12.)).into_any_element(),
         Some(em) => div().size(px(24.)).mr(px(12.)).flex_none().flex().items_center().justify_center().text_size(px(18.)).child(em.clone()).into_any_element(),
         None => doc_icon().mr(px(12.)).into_any_element(),
     }
@@ -599,6 +603,7 @@ impl Workspace {
             .when(narrow, |d| d.child(crate::ui::header_icon("home-search", "search").mr(px(4.))
                 .tip(crate::settings::tr("搜索文档", "Search documents"), Some(crate::shortcuts::hint("workspace::FocusSearch", "⌘ + J")))
                 .on_click(cx.listener(|w, _, window, cx| w.open_search(window, cx)))))
+            .child(self.import_button("home-import", None, cx))
             .child(crate::ui::header_icon("home-new-folder", "folder-plus")
                 .tip(crate::settings::tr("新建文件夹", "New folder"), None)
                 .on_click(cx.listener(|w, _, window, cx| w.new_folder(None, window, cx))))

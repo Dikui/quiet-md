@@ -51,6 +51,21 @@ pub struct Meta {
     /// 隐藏引用列表 (the "…" menu's 显示引用列表 switch off).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub refs_hidden: bool,
+    /// A Markdown file, edited as Markdown: `docs/<id>.md`, or `path`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub markdown: bool,
+    /// 本机文件: a Markdown file opened where it is, outside the library.
+    /// The library never moves, trashes or deletes it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// The title of a Markdown file in the library (the file has none).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+impl Meta {
+    /// 本机文件: outside the library's tree.
+    pub fn local(&self) -> bool { self.path.is_some() }
 }
 
 fn catalogue_closed_default() -> bool { true }
@@ -62,6 +77,7 @@ impl Default for Meta {
             width: PageWidth::default(), catalogue_closed: true,
             parent: None, order: 0, starred: 0, reading: false,
             info: InfoRow::default(), refs_hidden: false,
+            markdown: false, path: None, name: None,
         }
     }
 }
@@ -196,6 +212,9 @@ pub struct Entry {
 pub struct Store {
     file_changes: Vec<std::sync::Weak<std::sync::Mutex<Vec<FileDelta>>>>,
     loaded: std::cell::RefCell<HashMap<String, String>>,
+    /// Library images and attachments copied beside each 本机文件 this
+    /// session, so autosaves reuse the copy instead of making another.
+    copied: std::cell::RefCell<HashMap<String, HashMap<PathBuf, String>>>,
     /// What `list` parsed from each file, kept while its mtime and size stay
     /// the same: re-reading every document on each window activation stalled
     /// the main thread for seconds on big or iCloud-evicted libraries.
@@ -223,7 +242,10 @@ impl Drop for WriteLock {
 
 /// Version of the on-disk layout, kept in `format.json`. Bump it when a
 /// change would make older builds misread the library.
-pub const FORMAT: u32 = 2;
+pub const FORMAT: u32 = 3;
+/// What a library is marked with until it holds a Markdown document or a
+/// 本机文件 (FORMAT 3): until then 0.1.7 and older still open it.
+const BASE_FORMAT: u32 = 2;
 
 #[path = "folders.rs"]
 mod folders;
@@ -365,11 +387,11 @@ impl Store {
         match std::fs::read(&marker).ok().and_then(|b| serde_json::from_slice::<FormatMarker>(&b).ok()) {
             Some(m) if m.format > FORMAT => anyhow::bail!("这个文档库由更新版本的 Quiet.md 创建，请升级后再打开"),
             Some(_) => {}
-            None => write_atomic(&marker, &serde_json::to_vec_pretty(&FormatMarker { format: FORMAT })?)?,
+            None => write_atomic(&marker, &serde_json::to_vec_pretty(&FormatMarker { format: BASE_FORMAT })?)?,
         }
         let index = load_json(&root.join("index.json"), "文档索引", &mut warnings);
         let trash = load_json(&root.join("trash").join("index.json"), "回收站索引", &mut warnings);
-        let mut store = Store { file_changes: vec![], root, index, trash, warnings, loaded: Default::default(), parsed: HashMap::new() };
+        let mut store = Store { file_changes: vec![], root, index, trash, warnings, loaded: Default::default(), copied: Default::default(), parsed: HashMap::new() };
         if let Ok(entries) = std::fs::read_dir(store.recovery_dir()) {
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -406,7 +428,60 @@ impl Store {
     }
 
     fn path(&self, id: &str) -> PathBuf {
-        self.root.join("docs").join(format!("{id}.xml"))
+        match self.index.get(id) {
+            Some(Meta { path: Some(p), .. }) => PathBuf::from(p),
+            Some(m) if m.markdown => self.root.join("docs").join(format!("{id}.md")),
+            _ => self.root.join("docs").join(format!("{id}.xml")),
+        }
+    }
+
+    pub fn is_markdown(&self, id: &str) -> bool { self.index.get(id).is_some_and(|m| m.markdown) }
+
+    /// The folder of a 本机文件, which its images are relative to.
+    fn base(&self, id: &str) -> Option<PathBuf> {
+        self.index.get(id)?.path.as_ref().and_then(|p| std::path::Path::new(p).parent()).map(PathBuf::from)
+    }
+
+    /// A Markdown document's title: its name in the library, its file name outside.
+    fn markdown_title(&self, id: &str) -> String {
+        let Some(m) = self.index.get(id) else { return String::new() };
+        match &m.path {
+            Some(p) => std::path::Path::new(p).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default(),
+            None => m.name.clone().unwrap_or_default(),
+        }
+    }
+
+    /// `text` (a file's contents) as a document.
+    fn parse_doc(&self, id: &str, text: &str) -> Result<Document> {
+        if !self.is_markdown(id) { return docxml::parse(text); }
+        Ok(crate::markdown::parse_file(text, &self.markdown_title(id), self.base(id).as_deref()))
+    }
+
+    /// `doc` as `id`'s file contents; a Markdown file keeps the front matter it has on disk.
+    fn serialize_doc(&self, id: &str, doc: &Document, disk: Option<&str>) -> String { self.serialize_with_copies(id, doc, disk).0 }
+
+    /// `serialize_doc`, and the library files a 本机文件 needs copied beside
+    /// it: (source, path relative to its folder).
+    fn serialize_with_copies(&self, id: &str, doc: &Document, disk: Option<&str>) -> (String, Vec<(PathBuf, String)>) {
+        if !self.is_markdown(id) { return (docxml::serialize(doc), vec![]); }
+        let front = disk.map(|d| crate::markdown::front_matter(d.trim_start_matches('\u{feff}')).0).unwrap_or_default();
+        let base = self.base(id);
+        let name = base.is_some().then(|| self.markdown_title(id));
+        let copied = self.copied.borrow();
+        let out = crate::markdown::write_file_with(doc, front, &crate::markdown::Options {
+            library_root: Some(&self.root), base: base.as_deref(), name: name.as_deref(), copied: copied.get(id), original: disk, ..Default::default()
+        });
+        let bom = if disk.is_some_and(|d| d.starts_with('\u{feff}')) { "\u{feff}" } else { "" };
+        (format!("{bom}{}", out.text), out.files)
+    }
+
+    /// Mark the library FORMAT 3 before its first Markdown document or
+    /// 本机文件: older builds would drop their `markdown` / `path` / `name`.
+    fn require_markdown_format(&self) -> Result<()> {
+        let path = self.root.join("format.json");
+        let marker: FormatMarker = serde_json::from_slice(&std::fs::read(&path)?)?;
+        if marker.format < FORMAT { write_atomic(&path, &serde_json::to_vec_pretty(&FormatMarker { format: FORMAT })?)?; }
+        Ok(())
     }
 
     /// Take the library's write lock and adopt what other copies wrote since
@@ -439,19 +514,28 @@ impl Store {
         let mut out = vec![];
         let Ok(rd) = std::fs::read_dir(self.root.join("docs")) else { return out };
         let mut dirty = false;
-        for e in rd.flatten() {
-            let p = e.path();
-            if p.extension().and_then(|s| s.to_str()) != Some("xml") {
-                continue;
-            }
-            let Some(id) = p.file_stem().and_then(|s| s.to_str()).map(str::to_string) else { continue };
-            let md = e.metadata().ok();
+        let local: Vec<(String, PathBuf)> = self.index.iter().filter_map(|(id, m)| Some((id.clone(), PathBuf::from(m.path.as_ref()?)))).collect();
+        let files = rd.flatten().map(|e| e.path()).filter_map(|p| {
+            let markdown = match p.extension().and_then(|s| s.to_str()) { Some("xml") => false, Some("md") => true, _ => return None };
+            Some((p.file_stem()?.to_str()?.to_string(), p, markdown))
+        }).collect::<Vec<_>>();
+        for (id, p, markdown) in files.into_iter().chain(local.into_iter().map(|(id, p)| (id, p, true))) {
+            let md = std::fs::metadata(&p).ok();
+            if md.is_none() && self.index.get(&id).is_some_and(Meta::local) { continue; }
             let stamp = md.as_ref().and_then(|m| Some((m.modified().ok()?, m.len())));
             let parsed = match self.parsed.get(&id).filter(|c| stamp == Some((c.0, c.1))) {
                 Some(c) => c.2.clone(),
                 None => {
                     let Ok(xml) = std::fs::read_to_string(&p) else { continue };
-                    let doc = docxml::parse(&xml).unwrap_or_default();
+                    if markdown && !self.index.get(&id).is_some_and(|m| m.markdown) && _lock.is_some() && self.require_markdown_format().is_ok() {
+                        // A .md dropped into docs/ by hand.
+                        let t = now();
+                        let name = Some("未命名".to_string());
+                        self.index.entry(id.clone()).or_insert(Meta { created: t, modified: t, ..Default::default() }).markdown = true;
+                        if let Some(m) = self.index.get_mut(&id) { m.name = m.name.take().or(name); }
+                        dirty = true;
+                    }
+                    let doc = self.parse_doc(&id, &xml).unwrap_or_default();
                     let parsed = Parsed { title: doc.title.text.clone(), icon: doc.icon.clone(), body: doc.plain_text().into(), reminders: doc.reminders(), links: doc.doc_links() };
                     if let Some((t, len)) = stamp { self.parsed.insert(id.clone(), (t, len, parsed.clone())); }
                     parsed
@@ -467,8 +551,10 @@ impl Store {
                     .unwrap_or_else(now);
                 Meta { created: m, modified: m, ..Default::default() }
             });
-            let Parsed { title, icon, body, reminders, links } = parsed;
-            out.push(Entry { id, meta: meta.clone(), title, icon, body, reminders, links });
+            let Parsed { mut title, icon, body, reminders, links } = parsed;
+            if meta.markdown { title = self.markdown_title(&id); }
+            let meta = self.index[&id].clone();
+            out.push(Entry { id, meta, title, icon, body, reminders, links });
         }
         // Folders in id order: the index is a HashMap, whose order changes every time it is re-read.
         let mut folders: Vec<(&String, &Meta)> = self.index.iter().filter(|(_, m)| m.folder.is_some()).collect();
@@ -486,14 +572,14 @@ impl Store {
     }
 
     pub fn load(&self, id: &str) -> Result<Document> {
-        docxml::parse(&std::fs::read_to_string(self.path(id))?)
+        self.parse_doc(id, &std::fs::read_to_string(self.path(id))?)
     }
 
     /// Only opening an editor establishes a new save baseline; previews must
     /// not hide external changes from an already open editor.
     pub fn load_for_edit(&self, id: &str, shared: bool) -> Result<Document> {
         let xml = std::fs::read_to_string(self.path(id))?;
-        let doc = docxml::parse(&xml)?;
+        let doc = self.parse_doc(id, &xml)?;
         if !shared { self.loaded.borrow_mut().insert(id.to_string(), xml); }
         Ok(doc)
     }
@@ -508,13 +594,33 @@ impl Store {
 
     /// `save` for callers that already hold the write lock.
     fn save_now(&mut self, id: &str, doc: &Document) -> Result<Meta> {
-        let xml = docxml::serialize(doc);
+        let disk = if self.is_markdown(id) || self.loaded.borrow().contains_key(id) { std::fs::read_to_string(self.path(id)).ok() } else { None };
+        let (xml, copies) = self.serialize_with_copies(id, doc, disk.as_deref());
         if let Some(previous) = self.loaded.borrow().get(id) {
-            let disk = std::fs::read_to_string(self.path(id))?;
-            anyhow::ensure!(&disk == previous || disk == xml, "文档已被另一个实例修改，未覆盖磁盘内容。请另存副本或重新载入磁盘版本");
+            let disk = disk.as_deref().ok_or_else(|| anyhow::anyhow!("无法读取文档"))?;
+            let message = if self.index.get(id).is_some_and(Meta::local) { "文件已在别处被修改，未覆盖磁盘内容。请另存副本或重新打开文件" } else { "文档已被另一个实例修改，未覆盖磁盘内容。请另存副本或重新载入磁盘版本" };
+            anyhow::ensure!(disk == previous || disk == xml, "{message}");
         }
-        write_atomic(&self.path(id), xml.as_bytes())?;
-        self.loaded.borrow_mut().insert(id.to_string(), xml);
+        let title = self.is_markdown(id).then(|| doc.title.text.trim().to_string());
+        // A Markdown file whose content did not change is left alone: its
+        // formatting is the user's.
+        let same = self.is_markdown(id) && disk.as_deref().is_some_and(|d| d == xml || self.parse_doc(id, d).is_ok_and(|was| self.serialize_doc(id, &was, Some(d)) == xml));
+        if !same {
+            // Images and attachments first, so the file never links to a missing one.
+            if let Some(base) = self.base(id) {
+                for (src, rel) in &copies {
+                    let to = base.join(rel);
+                    if !to.exists() {
+                        if let Some(dir) = to.parent() { std::fs::create_dir_all(dir)?; }
+                        std::fs::copy(src, &to)?;
+                    }
+                    self.copied.borrow_mut().entry(id.to_string()).or_default().insert(src.clone(), rel.clone());
+                }
+            }
+            write_atomic(&self.path(id), xml.as_bytes())?;
+        }
+        self.loaded.borrow_mut().insert(id.to_string(), if same { disk.unwrap_or(xml) } else { xml });
+        if let Some(title) = title.filter(|t| *t != self.markdown_title(id)) { self.retitle_markdown(id, &title)?; }
         let t = now();
         let m = self.index.entry(id.to_string()).or_insert(Meta { created: t, modified: t, ..Default::default() });
         m.modified = t;
@@ -538,6 +644,73 @@ impl Store {
         Ok(id)
     }
 
+    /// A Markdown file's new title: its name in the library; outside, the
+    /// file is renamed in its folder (kept as it is when the name is taken).
+    fn retitle_markdown(&mut self, id: &str, title: &str) -> Result<()> {
+        let Some(m) = self.index.get(id) else { return Ok(()) };
+        let Some(old) = m.path.clone().map(PathBuf::from) else {
+            self.index.get_mut(id).unwrap().name = Some(title.to_string());
+            return Ok(());
+        };
+        let name = title.replace(['/', '\\', ':'], "_");
+        let name = name.trim().trim_start_matches('.');
+        if name.is_empty() { return Ok(()); }
+        let ext = old.extension().map(|e| e.to_string_lossy().into_owned()).unwrap_or_else(|| "md".into());
+        let new = old.with_file_name(format!("{name}.{ext}"));
+        if new == old || new.try_exists()? { return Ok(()); }
+        std::fs::rename(&old, &new)?;
+        self.index.get_mut(id).unwrap().path = Some(new.to_string_lossy().into_owned());
+        Ok(())
+    }
+
+    /// A new Markdown document in the library (导入, 创建副本): `front`
+    /// matter, then `doc`; titled `doc`'s title.
+    pub fn create_markdown(&mut self, doc: &Document, front: &str) -> Result<String> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let _lock = self.begin_write()?;
+        self.require_markdown_format()?;
+        let t = now();
+        self.index.insert(id.clone(), Meta { created: t, modified: t, markdown: true, name: Some(doc.title.text.trim().to_string()), ..Default::default() });
+        let text = format!("{front}{}", crate::markdown::write_file(doc, "", None));
+        if let Err(e) = write_atomic(&self.path(&id), text.as_bytes()).and_then(|_| self.save_index()) { self.index.remove(&id); return Err(e); }
+        self.record_file_change(&id, None);
+        Ok(id)
+    }
+
+    /// A Markdown document's front matter, as on disk.
+    pub fn front_matter_of(&self, id: &str) -> String {
+        if !self.is_markdown(id) { return String::new(); }
+        let text = std::fs::read_to_string(self.path(id)).unwrap_or_default();
+        crate::markdown::front_matter(text.trim_start_matches('\u{feff}')).0.to_string()
+    }
+
+    /// Where a 本机文件 is.
+    pub fn local_path(&self, id: &str) -> Option<PathBuf> { self.index.get(id)?.path.as_ref().map(PathBuf::from) }
+
+    /// 打开 a Markdown file where it is (本机文件): its document id, the one
+    /// it already has when it was opened before.
+    pub fn open_local(&mut self, path: &std::path::Path) -> Result<String> {
+        let path = path.canonicalize()?;
+        // Windows canonical paths are `\\?\C:\…`: keep the ordinary form, which
+        // the Explorer and the title show.
+        let path = match path.to_str().and_then(|p| p.strip_prefix(r"\\?\")).filter(|p| !p.starts_with("UNC\\")) { Some(p) => PathBuf::from(p), None => path };
+        anyhow::ensure!(path.is_file(), "文件不存在");
+        let _lock = self.begin_write()?;
+        let key = path.to_string_lossy().into_owned();
+        let t = now();
+        if let Some((id, m)) = self.index.iter_mut().find(|(_, m)| m.path.as_deref() == Some(key.as_str())) {
+            m.opened = t;
+            let id = id.clone();
+            self.save_index()?;
+            return Ok(id);
+        }
+        self.require_markdown_format()?;
+        let id = uuid::Uuid::new_v4().to_string();
+        self.index.insert(id.clone(), Meta { created: t, modified: t, opened: t, markdown: true, path: Some(key), ..Default::default() });
+        if let Err(e) = self.save_index() { self.index.remove(&id); return Err(e); }
+        Ok(id)
+    }
+
     /// Size of the document on disk, plus the local images and files it references.
     pub fn size_of(&self, id: &str, doc: &Document) -> u64 {
         let mut n = std::fs::metadata(self.path(id)).map(|m| m.len()).unwrap_or(0);
@@ -553,6 +726,12 @@ impl Store {
     /// takes it along (`None`: deleted itself).
     pub fn delete(&mut self, id: &str, root: Option<&str>) -> Result<()> {
         let _lock = self.begin_write()?;
+        // 本机文件: only taken off the list; the file is the user's.
+        if self.index.get(id).is_some_and(Meta::local) {
+            self.index.remove(id);
+            self.loaded.borrow_mut().remove(id);
+            return self.save_index();
+        }
         let before = self.file_state(id);
         let target = self.trash_path(id);
         anyhow::ensure!(!target.try_exists()?, "回收站已存在同名文档，未覆盖：{id}");
@@ -581,7 +760,8 @@ impl Store {
     }
 
     fn trash_path(&self, id: &str) -> PathBuf {
-        self.root.join("trash").join(format!("{id}.xml"))
+        let markdown = self.trash.get(id).map(|t| &t.meta).or_else(|| self.index.get(id)).is_some_and(|m| m.markdown);
+        self.root.join("trash").join(format!("{id}.{}", if markdown { "md" } else { "xml" }))
     }
 
     fn save_trash(&self) -> Result<()> {
@@ -620,9 +800,7 @@ impl Store {
                     }
                 };
                 let p = e.path();
-                if p.extension().and_then(|s| s.to_str()) != Some("xml") {
-                    continue;
-                }
+                let markdown = match p.extension().and_then(|s| s.to_str()) { Some("xml") => false, Some("md") => true, _ => continue };
                 let Some(id) = p.file_stem().and_then(|s| s.to_str()).map(str::to_string) else { continue };
                 if !self.trash.contains_key(&id) {
                     let t = e
@@ -634,7 +812,7 @@ impl Store {
                         .unwrap_or_else(now);
                     // Modification time is not deletion time. Recovered orphans
                     // get a full retention period instead of immediate expiry.
-                    let meta = self.index.get(&id).cloned().unwrap_or(Meta { created: t, modified: t, ..Default::default() });
+                    let meta = self.index.get(&id).cloned().unwrap_or(Meta { created: t, modified: t, markdown, name: markdown.then(|| "未命名".into()), ..Default::default() });
                     self.trash.insert(id.clone(), Trashed { meta, deleted: now(), root: None });
                     dirty = true;
                 }
@@ -663,10 +841,10 @@ impl Store {
             .iter()
             .filter(|(_, t)| t.root.as_ref().is_none_or(|r| !self.trash.contains_key(r)))
             .map(|(id, t)| {
-                let doc = std::fs::read_to_string(self.trash_path(id)).ok().and_then(|x| docxml::parse(&x).ok()).unwrap_or_default();
+                let doc = if t.meta.markdown { Document::default() } else { std::fs::read_to_string(self.trash_path(id)).ok().and_then(|x| docxml::parse(&x).ok()).unwrap_or_default() };
                 TrashEntry {
                     id: id.clone(),
-                    title: t.meta.folder.clone().unwrap_or_else(|| doc.title.text.clone()),
+                    title: t.meta.folder.clone().or_else(|| t.meta.name.clone()).unwrap_or_else(|| doc.title.text.clone()),
                     icon: doc.icon.clone(),
                     deleted: t.deleted,
                     parent: t.meta.parent.clone(),
@@ -783,6 +961,16 @@ impl Store {
             self.record_file_change(id, before);
             return Ok(meta);
         }
+        if self.is_markdown(id) {
+            // The file is left as it is: only its name changes.
+            self.retitle_markdown(id, title)?;
+            let m = self.index.get_mut(id).unwrap();
+            m.modified = now();
+            let meta = m.clone();
+            self.save_index()?;
+            if !meta.local() { self.record_file_change(id, before); }
+            return Ok(meta);
+        }
         let mut doc = self.load(id)?;
         doc.title = crate::model::RichText::plain(title);
         let meta = self.save_now(id, &doc)?;
@@ -886,6 +1074,112 @@ mod tests {
         let changes = journal.take();
         local.apply_file_history(&changes, false).unwrap();
         assert_eq!(local.index[&page].parent.as_ref(), Some(&a));
+    }
+
+    #[test]
+    fn markdown_documents_stay_markdown() {
+        let lib = Lib::new("markdown");
+        let mut s = lib.open();
+        let mut d = crate::markdown::parse_file("Hello *there*\n", "Note", None);
+        let id = s.create_markdown(&d, "---\na: 1\n---\n").unwrap();
+        let file = lib.0.join("docs").join(format!("{id}.md"));
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "---\na: 1\n---\nHello *there*\n");
+        let e = s.list().into_iter().find(|e| e.id == id).unwrap();
+        assert!(e.meta.markdown);
+        assert_eq!(e.title, "Note");
+        // Saving rewrites the body only; the front matter stays.
+        let mut loaded = s.load_for_edit(&id, false).unwrap();
+        loaded.blocks.push(crate::model::Block::text("more"));
+        s.save(&id, &loaded).unwrap();
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "---\na: 1\n---\nHello *there*\n\nmore\n");
+        // A title change is the name, not the file.
+        d = s.load(&id).unwrap();
+        d.title = crate::model::RichText::plain("Renamed");
+        s.save(&id, &d).unwrap();
+        assert_eq!(s.load(&id).unwrap().title.text, "Renamed");
+        assert!(!std::fs::read_to_string(&file).unwrap().contains("Renamed"));
+        // Through the 回收站 and back as Markdown.
+        s.delete(&id, None).unwrap();
+        assert!(lib.0.join("trash").join(format!("{id}.md")).is_file());
+        assert_eq!(s.list_trash()[0].title, "Renamed");
+        s.restore(&id).unwrap();
+        assert!(file.is_file());
+        assert_eq!(s.load(&id).unwrap().title.text, "Renamed");
+    }
+
+    #[test]
+    fn local_files_are_edited_in_place_and_never_trashed() {
+        let lib = Lib::new("local");
+        let dir = lib.0.join("outside");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("todo.md");
+        std::fs::write(&file, "* star bullet\n\n![x](pics/x.png)\n").unwrap();
+        let mut s = lib.open();
+        let id = s.open_local(&file).unwrap();
+        assert_eq!(s.open_local(&file).unwrap(), id);
+        let e = s.list().into_iter().find(|e| e.id == id).unwrap();
+        assert!(e.meta.local());
+        assert_eq!(e.title, "todo");
+        let mut d = s.load_for_edit(&id, false).unwrap();
+        // Saving untouched content leaves the user's formatting alone.
+        s.save(&id, &d).unwrap();
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "* star bullet\n\n![x](pics/x.png)\n");
+        d.blocks.push(crate::model::Block::text("added"));
+        s.save(&id, &d).unwrap();
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "* star bullet\n\n![x](pics/x.png)\n\nadded\n");
+        // Changed elsewhere: not overwritten.
+        std::fs::write(&file, "edited elsewhere\n").unwrap();
+        d.blocks.push(crate::model::Block::text("again"));
+        assert!(s.save(&id, &d).is_err());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "edited elsewhere\n");
+        // Renaming renames the file beside it.
+        s.rename(&id, "done").unwrap();
+        let renamed = dir.canonicalize().unwrap().join("done.md");
+        assert!(renamed.is_file() && !file.exists());
+        // Removing it from the list keeps the file.
+        s.delete(&id, None).unwrap();
+        assert!(renamed.is_file());
+        assert!(s.list().iter().all(|e| e.id != id));
+        assert!(s.list_trash().is_empty());
+    }
+
+    /// Images from the library used in a 本机文件 are copied beside it:
+    /// pasted ones named after the file, picked ones keeping their name;
+    /// autosaves reuse the copies.
+    #[test]
+    fn local_files_get_their_images_beside_them() {
+        let lib = Lib::new("local-images");
+        let dir = lib.0.join("outside");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("Plan.md");
+        std::fs::write(&file, "text\n").unwrap();
+        let mut s = lib.open();
+        std::fs::create_dir_all(lib.0.join("assets")).unwrap();
+        let pasted = lib.0.join("assets/3e5c9916-7c1f-4f7d-af25-74dd4a8a241e.png");
+        let picked = lib.0.join("assets/1a2b3c4d-截图说明.png");
+        std::fs::write(&pasted, b"p").unwrap();
+        std::fs::write(&picked, b"q").unwrap();
+        // Something already there keeps its name.
+        std::fs::create_dir_all(dir.join("Plan.assets")).unwrap();
+        std::fs::write(dir.join("Plan.assets/Plan-1.png"), b"old").unwrap();
+        let id = s.open_local(&file).unwrap();
+        let mut d = s.load_for_edit(&id, false).unwrap();
+        let image = |src: &std::path::Path| crate::model::Block::new(crate::model::BlockKind::Image { src_kind: "src".into(), src: src.to_string_lossy().into(), width: None, height: None, caption: None, crop: None }, Default::default());
+        d.blocks.push(image(&pasted));
+        d.blocks.push(image(&picked));
+        s.save(&id, &d).unwrap();
+        let text = std::fs::read_to_string(dir.canonicalize().unwrap().join("Plan.md")).unwrap();
+        assert_eq!(text, "text\n\n![](Plan.assets/Plan-2.png)\n\n![](Plan.assets/截图说明.png)\n");
+        assert_eq!(std::fs::read(dir.join("Plan.assets/Plan-2.png")).unwrap(), b"p");
+        assert_eq!(std::fs::read(dir.join("Plan.assets/Plan-1.png")).unwrap(), b"old");
+        // The next autosave (the editor still points at the library copy) makes no new copy.
+        d.blocks.push(crate::model::Block::text("more"));
+        s.save(&id, &d).unwrap();
+        assert_eq!(std::fs::read_dir(dir.join("Plan.assets")).unwrap().count(), 3);
+        assert!(std::fs::read_to_string(dir.join("Plan.md")).unwrap().contains("Plan.assets/Plan-2.png"));
+        // Reopened, the links point at the copies.
+        let again = s.load(&id).unwrap();
+        assert!(again.blocks.iter().any(|b| matches!(&b.kind, crate::model::BlockKind::Image { src, .. } if src.ends_with("Plan.assets/截图说明.png"))));
     }
 
     #[test]
@@ -1063,7 +1357,33 @@ mod tests {
         let titles: Vec<&str> = inside.iter().map(|e| e.title.as_str()).collect();
         assert_eq!(titles, ["父", "子一", "子二"], "the page first, then its children oldest first");
         assert!(lib.0.join("index.before-folders.json").exists());
-        assert!(String::from_utf8(std::fs::read(lib.0.join("format.json")).unwrap()).unwrap().contains(&FORMAT.to_string()));
+        assert!(String::from_utf8(std::fs::read(lib.0.join("format.json")).unwrap()).unwrap().contains(&BASE_FORMAT.to_string()));
+    }
+
+    /// A library is marked FORMAT 3 only once it holds Markdown, so older
+    /// builds keep opening libraries that never used it.
+    #[test]
+    fn markdown_raises_the_format_only_when_used() {
+        let format = |lib: &Lib| serde_json::from_slice::<FormatMarker>(&std::fs::read(lib.0.join("format.json")).unwrap()).unwrap().format;
+        let lib = Lib::new("lazy-format");
+        let mut s = lib.open();
+        s.create_from(&doc("plain")).unwrap();
+        s.list();
+        assert_eq!(format(&lib), BASE_FORMAT);
+        s.create_markdown(&doc("md"), "").unwrap();
+        assert_eq!(format(&lib), FORMAT);
+        drop(s);
+        // Reopening keeps it.
+        lib.open().list();
+        assert_eq!(format(&lib), FORMAT);
+        let other = Lib::new("lazy-format-local");
+        std::fs::create_dir_all(&other.0).unwrap();
+        let file = other.0.join("x.md");
+        std::fs::write(&file, "x\n").unwrap();
+        let mut s = other.open();
+        assert_eq!(format(&other), BASE_FORMAT);
+        s.open_local(&file).unwrap();
+        assert_eq!(format(&other), FORMAT);
     }
 
     #[test]
@@ -1110,7 +1430,7 @@ mod tests {
         let index = std::fs::read(trash.join("index.json")).unwrap();
         std::fs::rename(&trash, lib.0.join("trash-away")).unwrap();
         std::fs::write(&trash, b"").unwrap();
-        let mut s = Store { file_changes: vec![], root: lib.0.clone(), index: HashMap::new(), trash: serde_json::from_slice(&index).unwrap(), warnings: vec![], loaded: Default::default(), parsed: HashMap::new() };
+        let mut s = Store { file_changes: vec![], root: lib.0.clone(), index: HashMap::new(), trash: serde_json::from_slice(&index).unwrap(), warnings: vec![], loaded: Default::default(), copied: Default::default(), parsed: HashMap::new() };
         assert_eq!(s.list_trash().len(), 1);
         assert_eq!(s.trash.len(), 1);
     }

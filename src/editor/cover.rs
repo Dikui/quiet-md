@@ -9,7 +9,7 @@ use super::overlays::at;
 use super::view::{Editor, EditorEvent, Menu};
 use crate::model::Cover;
 use crate::editor_theme::{self as theme, Theme, craft};
-use crate::editor_ui::{ROW_RADIUS, TipExt, icon, menu_glyph, menu_row, panel, popover};
+use crate::editor_ui::{ROW_RADIUS, TipExt, icon, menu, menu_glyph, menu_row, panel};
 use super::image::PictureExt;
 use gpui::{prelude::FluentBuilder, *};
 use std::cell::Cell;
@@ -292,7 +292,8 @@ impl Editor {
     /// The 添加图标 / 添加封面 row: shown on header hover.
     pub(super) fn header_entries(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let doc = &self.core.doc;
-        if self.read_only || (doc.icon.is_some() && doc.cover.is_some() && !self.info.hidden) {
+        let nothing_to_add = self.markdown || (doc.icon.is_some() && doc.cover.is_some());
+        if self.read_only || (nothing_to_add && !self.info.hidden) {
             return None;
         }
         Some(
@@ -302,10 +303,11 @@ impl Editor {
                 .left_0()
                 .h(px(28.))
                 .flex()
-                .when(doc.icon.is_none(), |d| {
+                // A Markdown file has neither.
+                .when(doc.icon.is_none() && !self.markdown, |d| {
                     d.child(meta_entry("add-doc-icon", "smile-plus", crate::settings::text("添加图标")).on_click(cx.listener(|e, _, window, cx| e.add_doc_icon(window, cx))))
                 })
-                .when(doc.cover.is_none(), |d| d.child(meta_entry("add-doc-cover", "image", crate::settings::text("添加封面")).relative()
+                .when(doc.cover.is_none() && !self.markdown, |d| d.child(meta_entry("add-doc-cover", "image", crate::settings::text("添加封面")).relative()
                     .child({ let bounds = self.cover_ui.edit_bounds.clone(); canvas(move |b, _, _| bounds.set(Some(b)), |_, _, _, _| {}).absolute().inset_0() })
                     .on_click(cx.listener(|e, _, _, cx| e.add_cover(cx)))))
                 .when(self.info.hidden, |d| d.child(meta_entry("show-doc-info", "doc-info", crate::settings::text("展示文档信息")).on_click(cx.listener(|e, _, _, cx| e.show_info(cx)))))
@@ -452,7 +454,7 @@ impl Editor {
                 .child(label)
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         };
-        let el = popover()
+        let el = menu()
             .id("cover-menu")
             .occlude()
             .py(px(crate::editor_ui::MENU_PAD_Y))

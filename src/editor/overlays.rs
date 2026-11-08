@@ -8,7 +8,7 @@ use super::table::CellSelKind;
 use super::view::{BlockAct, BlockSub, Editor, Mark, Menu};
 use crate::model::*;
 use crate::feishu_theme::{self as theme, Theme};
-use crate::editor_ui::{TipExt, icon, panel, popover};
+use crate::editor_ui::{MENU_INSET, MENU_PAD_Y, MENU_ROW_H, TipExt, icon, menu, panel, popover};
 use gpui::{prelude::FluentBuilder, *};
 
 const SLASH_W: f32 = 247.;
@@ -120,20 +120,22 @@ fn row_tinted(
 ) -> Stateful<Div> {
     div()
         .id(id)
-        .h(px(32.))
+        .flex_none()
+        .h(px(MENU_ROW_H))
+        .mx(px(MENU_INSET))
         .px(px(8.))
         .flex()
         .items_center()
-        .rounded(px(4.))
-        .text_size(px(14.))
-        .line_height(px(22.))
+        .rounded(px(crate::ui::ROW_RADIUS))
+        .text_size(px(13.))
+        .line_height(px(20.))
         .text_color(text)
         .when(highlighted, |d| d.bg(Theme::fill_hover()))
         // Disabled items (drawn in text_disabled) neither hover nor point.
         .when(text != Theme::text_disabled(), |d| d.cursor_pointer().hover(|s| s.bg(Theme::fill_hover())))
-        // Same shell as the slash menu: 18px icon at x16, label at x53.
-        .child(icon(icon_name, 18., icon_color))
-        .child(div().ml(px(19.)).flex_1().whitespace_nowrap().child(crate::settings::label(label.into())))
+        // The app's menu row: 16px glyph, the label 8 after it.
+        .child(icon(icon_name, 16., icon_color))
+        .child(div().ml(px(8.)).flex_1().whitespace_nowrap().child(crate::settings::label(label.into())))
         .when_some(right, |d, r| {
             if r == "›" {
                 d.child(icon("chevron-right", 14., Theme::icon()))
@@ -199,17 +201,17 @@ fn grid_rows<T>(cells: Vec<(menus::SlashKind, T)>) -> Vec<Vec<T>> {
 }
 
 fn separator_h() -> Div {
-    div().my(px(4.)).h(px(1.)).bg(Theme::line_border())
+    div().flex_none().mx(px(MENU_INSET + 8.)).my(px(4.)).h(px(1.)).bg(Theme::line_border())
 }
 
 fn group_title(t: &str) -> Div {
     div()
         .flex_none()
         .h(px(32.))
-        .px(px(4.))
+        .px(px(MENU_INSET + 8.))
         .flex()
         .items_center()
-        .text_size(px(14.))
+        .text_size(px(12.))
         .text_color(Theme::text_caption())
         .child(crate::settings::label(t))
 }
@@ -445,7 +447,7 @@ impl Editor {
             .max_h(px(SLASH_MAX_H - 2.))
             .overflow_y_scroll()
             .track_scroll(&self.slash_scroll)
-            .p(px(8.))
+            .py(px(MENU_PAD_Y))
             .flex()
             .flex_col();
         let hover_sel = |n: usize| {
@@ -477,14 +479,14 @@ impl Editor {
             })
         };
         let mut last_group = usize::MAX;
-        let mut content_h: f32 = 16.;
+        let mut content_h: f32 = 2. * MENU_PAD_Y;
         // Basic group as one 6-per-row grid of 24px icon buttons
         // (spread across the 214px row, 12px between rows, 8px under the grid).
         let mut grid: Option<Vec<(menus::SlashKind, AnyElement)>> = None;
         // Rows hold 6 and 分隔线 always starts a new one; short rows are padded
         // so every row keeps the same columns.
         let grid_el = |cells: Vec<(menus::SlashKind, AnyElement)>| {
-            let mut rows = div().flex_none().mb(px(8.)).px(px(4.)).flex().flex_col().gap(px(12.));
+            let mut rows = div().flex_none().mb(px(8.)).px(px(MENU_INSET + 4.)).flex().flex_col().gap(px(12.));
             for r in grid_rows(cells) {
                 let pad = 6 - r.len();
                 rows = rows.child(div().flex().justify_between().children(r).children((0..pad).map(|_| div().size(px(24.)))));
@@ -535,7 +537,7 @@ impl Editor {
             }
             let sub = has_picker(kind);
             if sub && n == selected {
-                picker_at = Some((kind, content_h - 8.));
+                picker_at = Some((kind, content_h - MENU_PAD_Y));
             }
             content_h += 32.;
             list = list.child(
@@ -543,16 +545,17 @@ impl Editor {
                     .id(("slash", n))
                     // The list is height-capped; rows must not shrink to fit it.
                     .flex_none()
-                    .h(px(32.))
-                    .px(px(4.))
+                    .h(px(MENU_ROW_H))
+                    .mx(px(MENU_INSET))
+                    .px(px(8.))
                     .flex()
                     .items_center()
-                    .rounded(px(4.))
+                    .rounded(px(crate::ui::ROW_RADIUS))
                     .cursor_pointer()
                     .when(n == selected, |d| d.bg(Theme::fill_hover()))
-                    .child(div().size(px(24.)).flex().items_center().justify_center().child(icon(it.icon, 18., crate::feishu_theme::c(it.color))))
-                    .child(div().ml(px(16.)).flex_1().text_size(px(14.)).line_height(px(22.)).child(crate::settings::label(it.label)))
-                    .when(sub, |d| d.child(icon("chevron-right", 16., Theme::icon())))
+                    .child(icon(it.icon, 16., crate::feishu_theme::c(it.color)))
+                    .child(div().ml(px(8.)).flex_1().text_size(px(13.)).line_height(px(20.)).child(crate::settings::label(it.label)))
+                    .when(sub, |d| d.child(icon("chevron-right", 14., Theme::icon())))
                     .on_mouse_move(hover_sel(n))
                     .when(!sub, |d| d.on_mouse_down(MouseButton::Left, run(kind)))
                     .when(sub, |d| d.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())),
@@ -564,7 +567,7 @@ impl Editor {
         if results.is_empty() {
             content_h += 32.;
             list = list.child(
-                div().flex_none().h(px(32.)).px(px(8.)).flex().items_center().text_size(px(14.)).text_color(Theme::text_caption()).child(crate::settings::text("未能找到相关结果")),
+                div().flex_none().h(px(32.)).px(px(MENU_INSET + 8.)).flex().items_center().text_size(px(13.)).text_color(Theme::text_caption()).child(crate::settings::text("未能找到相关结果")),
             );
         }
         // An always-visible 8px thumb, rgba(31,35,41,.3), 3px in
@@ -588,7 +591,7 @@ impl Editor {
             let top = 2. + (track - h) * (off / (content_h - view_h)).clamp(0., 1.);
             div().absolute().right(px(3.)).top(px(top)).w(px(8.)).h(px(h)).rounded_full().bg(Theme::scrollbar_thumb())
         });
-        let el = popover()
+        let el = menu()
             .id("slash-menu")
             .occlude()
             .relative()
@@ -731,8 +734,9 @@ impl Editor {
                 }
             })
         };
-        let mut m = popover().id("block-menu").occlude().w(px(MENU_W)).p(px(8.)).flex().flex_col();
-        let turn = shape.turn_items();
+        let mut m = menu().id("block-menu").occlude().w(px(MENU_W)).py(px(MENU_PAD_Y)).flex().flex_col();
+        let mut turn = shape.turn_items();
+        if self.markdown { turn.retain(|t| !matches!((t.kind)(), BlockKind::Callout { .. })); }
         if !turn.is_empty() {
             // A callout's grid shows what its content is, next to 高亮块 itself.
             let current = |k: &BlockKind| match &kind {
@@ -741,7 +745,7 @@ impl Editor {
                 }
                 _ => menus::same_kind(&kind, k),
             };
-            let mut grid = div().flex().flex_wrap().gap_x(px(12.5)).gap_y(px(12.)).px(px(4.)).py(px(4.));
+            let mut grid = div().flex().flex_wrap().gap_x(px(12.5)).gap_y(px(12.)).px(px(12.)).py(px(4.));
             for (i, it) in turn.iter().enumerate() {
                 let k = (it.kind)();
                 let active = current(&k);
@@ -765,14 +769,14 @@ impl Editor {
             m = m.child(grid).child(separator_h().on_mouse_move(set_sub(None)));
         }
         // Grid: 2 rows of 24 + 12 gap + 4+4 padding, then a 9px separator.
-        let indent_y = 8. + if turn.is_empty() { 0. } else { 4. + 24. * 2. + 12. + 4. + 9. };
+        let indent_y = MENU_PAD_Y + if turn.is_empty() { 0. } else { 4. + 24. * 2. + 12. + 4. + 9. };
         // Text blocks get 缩进和对齐 and 颜色; the rest only indent.
-        let (indent_icon, indent_label) = if shape == menus::MenuShape::Text { ("indent-align", crate::settings::text("缩进和对齐")) } else { ("indent-increase", crate::settings::text("缩进")) };
+        let (indent_icon, indent_label) = if shape == menus::MenuShape::Text && !self.markdown { ("indent-align", crate::settings::text("缩进和对齐")) } else { ("indent-increase", crate::settings::text("缩进")) };
         m = m.child(
             row("bm-indent", indent_icon, indent_label, Some("›"), sub == Some(BlockSub::Indent))
                 .on_mouse_move(set_sub(Some(BlockSub::Indent))),
         );
-        let colorable = shape == menus::MenuShape::Text;
+        let colorable = shape == menus::MenuShape::Text && !self.markdown;
         if colorable {
             m = m.child(row("bm-color", "palette", crate::settings::text("颜色"), Some("›"), sub == Some(BlockSub::Color)).on_mouse_move(set_sub(Some(BlockSub::Color))));
         }
@@ -813,15 +817,15 @@ impl Editor {
                     }
                 };
                 Some(
-                    popover()
+                    menu()
                         .id("bm-indent-sub")
                         .occlude()
                         .absolute()
                         .left(px(MENU_W + 4.))
-                        .top(px(indent_y - 8.))
+                        .top(px(indent_y - MENU_PAD_Y))
                         .w(px(MENU_W))
-                        .p(px(8.))
-                        .when(shape == menus::MenuShape::Text, |d| {
+                        .py(px(MENU_PAD_Y))
+                        .when(shape == menus::MenuShape::Text && !self.markdown, |d| {
                             d.child(align_row("al-l", "align-left", crate::settings::text("左对齐"), crate::shortcuts::hint("editor::AlignLeft", "⌘ + Shift + L"), Align::Left))
                                 .child(align_row("al-c", "align-center", crate::settings::text("居中对齐"), crate::shortcuts::hint("editor::AlignCenter", "⌘ + Shift + E"), Align::Center))
                                 .child(align_row("al-r", "align-right", crate::settings::text("右对齐"), crate::shortcuts::hint("editor::AlignRight", "⌘ + Shift + R"), Align::Right))
@@ -838,7 +842,7 @@ impl Editor {
                 } else {
                     self.color_panel(Some(block), cx).into_any_element()
                 };
-                Some(div().absolute().left(px(MENU_W + 4.)).top(px(color_y - 8.)).child(p).into_any_element())
+                Some(div().absolute().left(px(MENU_W + 4.)).top(px(color_y - MENU_PAD_Y)).child(p).into_any_element())
             }
             _ => None,
         };
@@ -856,12 +860,12 @@ impl Editor {
         // separators are 9 tall, rows 32; 剪切 / 复制 / 删除 sit between two.
         let tail = 9. + 32. * 3. + 9.;
         if matches!(b.kind, BlockKind::Table(_)) {
-            return 8. + 32. + tail + 32. * 3. + 9.;
+            return MENU_PAD_Y + 32. + tail + 32. * 3. + 9.;
         }
         let shape = menus::MenuShape::of(&b.kind);
         let grid = if shape.turn_items().is_empty() { 0. } else { 4. + 24. * 2. + 12. + 4. + 9. };
         let color = if shape == menus::MenuShape::Text { 32. } else { 0. };
-        8. + grid + 32. + color + tail
+        MENU_PAD_Y + grid + 32. + color + tail
     }
 
     // ---- color panels
@@ -1206,14 +1210,15 @@ impl Editor {
                 div()
                     .id(("lang", i))
                     .flex_none()
-                    .h(px(36.))
-                    .px(px(12.))
+                    .h(px(MENU_ROW_H))
+                    .mx(px(MENU_INSET))
+                    .px(px(8.))
                     .flex()
                     .items_center()
                     .justify_between()
-                    .rounded(px(4.))
+                    .rounded(px(crate::ui::ROW_RADIUS))
                     .cursor_pointer()
-                    .text_size(px(14.))
+                    .text_size(px(13.))
                     .when(i == selected, |d| d.bg(Theme::fill_hover()))
                     .hover(|s| s.bg(Theme::fill_hover()))
                     .child(l)
@@ -1228,18 +1233,18 @@ impl Editor {
             );
         }
         if langs.is_empty() {
-            list = list.child(div().h(px(36.)).px(px(12.)).flex().items_center().text_size(px(14.)).text_color(Theme::text_caption()).child(crate::settings::text("无匹配结果")));
+            list = list.child(div().h(px(MENU_ROW_H)).px(px(MENU_INSET + 8.)).flex().items_center().text_size(px(13.)).text_color(Theme::text_caption()).child(crate::settings::text("无匹配结果")));
         }
-        let el = popover()
+        let el = menu()
             .id("lang-menu")
             .occlude()
             .w(px(240.))
-            .p(px(4.))
+            .py(px(MENU_PAD_Y))
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(
                 div()
-                    .m(px(4.))
-                    .mb(px(8.))
+                    .mx(px(MENU_INSET))
+                    .mb(px(6.))
                     .h(px(32.))
                     .px(px(8.))
                     .flex()
@@ -1254,7 +1259,7 @@ impl Editor {
             .child(list);
         // Under the language button, which sits ~267px left of the block's right
         // edge; above it when the list wouldn't fit below.
-        let h = px(8. + 44. + (langs.len().max(1) as f32 * 36.).min(288.) + 2.);
+        let h = px(2. * MENU_PAD_Y + 38. + (langs.len().max(1) as f32 * MENU_ROW_H).min(288.) + 2.);
         let x = b.right() - px(267.);
         let below = b.top() + px(34.);
         let (pos, corner) = if below + h > window.viewport_size().height - px(8.) && b.top() + px(4.) - h >= px(8.) {
@@ -1384,7 +1389,7 @@ impl Editor {
                     .on_mouse_down(MouseButton::Left, open(Menu::TurnInto)),
             )
             .child(sep())
-            .child(
+            .when(!self.markdown, |d| d.child(
                 btn("tb-align")
                     .w(px(44.))
                     .gap(px(6.))
@@ -1394,7 +1399,7 @@ impl Editor {
                     .on_hover(hover(Menu::Align))
                     .on_mouse_down(MouseButton::Left, open(Menu::Align)),
             )
-            .child(sep())
+            .child(sep()))
             .child(mark_btn("tb-b", "bold", crate::settings::text("粗体"), crate::shortcuts::hint("editor::Bold", "⌘ + B"), Some(crate::settings::text("**文本** 空格")), Mark::Bold, |m| m.bold))
             .child(mark_btn("tb-s", "strikethrough", crate::settings::text("删除线"), crate::shortcuts::hint("editor::Strike", "⌘ + Shift + X"), Some(crate::settings::text("~~文本~~ 空格")), Mark::Strike, |m| m.strike))
             .child(mark_btn("tb-i", "italic", crate::settings::text("斜体"), crate::shortcuts::hint("editor::Italic", "⌘ + I"), Some(crate::settings::text("*文本* 空格")), Mark::Italic, |m| m.italic))
@@ -1413,7 +1418,7 @@ impl Editor {
                     ),
             )
             .child(mark_btn("tb-code", "code", crate::settings::text("代码"), crate::shortcuts::hint("editor::InlineCode", "⌘ + Control + C"), Some(crate::settings::text("`代码`")), Mark::Code, |m| m.code))
-            .child(color_btn)
+            .when(!self.markdown, |d| d.child(color_btn))
             .child(div().mx(px(4.)).w(px(1.)).h(px(40.)).bg(Theme::line_border()))
             .child(
                 btn("tb-more")
@@ -1433,9 +1438,12 @@ impl Editor {
 
         let drop_el: Option<AnyElement> = match dropdown {
             Some(Menu::TurnInto) => {
-                let mut list = popover().id("tb-turn-menu").occlude().w(px(200.)).p(px(8.)).max_h(turn_height).overflow_y_scroll().on_scroll_wheel(|_, _, cx| cx.stop_propagation());
+                let mut list = menu().id("tb-turn-menu").occlude().w(px(200.)).py(px(MENU_PAD_Y)).max_h(turn_height).overflow_y_scroll().on_scroll_wheel(|_, _, cx| cx.stop_propagation());
                 for (i, it) in TURN_ITEMS.iter().enumerate() {
                     let k = (it.kind)();
+                    if self.markdown && matches!(k, BlockKind::Callout { .. }) {
+                        continue;
+                    }
                     let active = menus::same_kind(&head_kind, &k);
                     list = list.child(
                         row(("tt", i), it.icon, it.label, None, false)
@@ -1464,11 +1472,11 @@ impl Editor {
                         }),
                     )
                 };
-                let list = popover()
+                let list = menu()
                     .id("tb-align-menu")
                     .occlude()
                     .w(px(180.))
-                    .p(px(8.))
+                    .py(px(MENU_PAD_Y))
                     .child(item("ta-l", "align-left", crate::settings::text("左对齐"), crate::shortcuts::hint("editor::AlignLeft", "⌘ + Shift + L"), Align::Left))
                     .child(item("ta-c", "align-center", crate::settings::text("居中对齐"), crate::shortcuts::hint("editor::AlignCenter", "⌘ + Shift + E"), Align::Center))
                     .child(item("ta-r", "align-right", crate::settings::text("右对齐"), crate::shortcuts::hint("editor::AlignRight", "⌘ + Shift + R"), Align::Right));
@@ -1808,7 +1816,7 @@ impl Editor {
         let x_color = x_align + 44. + 17. + 5. * 32.;
         let drop_el: Option<AnyElement> = match dropdown {
             Some(Menu::TurnInto) => {
-                let mut list = popover().id("ttb-turn-menu").occlude().w(px(200.)).p(px(8.)).max_h(turn_height).overflow_y_scroll().on_scroll_wheel(|_, _, cx| cx.stop_propagation());
+                let mut list = menu().id("ttb-turn-menu").occlude().w(px(200.)).py(px(MENU_PAD_Y)).max_h(turn_height).overflow_y_scroll().on_scroll_wheel(|_, _, cx| cx.stop_propagation());
                 for (i, it) in TURN_ITEMS.iter().enumerate() {
                     let k = (it.kind)();
                     if matches!(k, BlockKind::Callout { .. }) {
@@ -1860,11 +1868,11 @@ impl Editor {
                         }),
                     )
                 };
-                let list = popover()
+                let list = menu()
                     .id("ttb-align-menu")
                     .occlude()
                     .w(px(232.))
-                    .p(px(8.))
+                    .py(px(MENU_PAD_Y))
                     .child(h("tta-l", "align-left", crate::settings::text("左对齐"), crate::shortcuts::hint("editor::AlignLeft", "⌘ + Shift + L"), Align::Left))
                     .child(h("tta-c", "align-center", crate::settings::text("居中对齐"), crate::shortcuts::hint("editor::AlignCenter", "⌘ + Shift + E"), Align::Center))
                     .child(h("tta-r", "align-right", crate::settings::text("右对齐"), crate::shortcuts::hint("editor::AlignRight", "⌘ + Shift + R"), Align::Right))
@@ -1961,11 +1969,11 @@ impl Editor {
             row(id, ic, label, None, false).on_mouse_move(set_sub(None)).on_mouse_down(MouseButton::Left, act(a))
         };
         let toggle = |id: &'static str, ic: &'static str, label: &'static str, on: bool, a: BlockAct| plain(id, ic, label, a).child(switch(on));
-        let m = popover()
+        let m = menu()
             .id("block-menu")
             .occlude()
             .w(px(MENU_W))
-            .p(px(8.))
+            .py(px(MENU_PAD_Y))
             .flex()
             .flex_col()
             .child(row("bm-indent", "indent-align", crate::settings::text("缩进"), Some("›"), sub == Some(BlockSub::Indent)).on_mouse_move(set_sub(Some(BlockSub::Indent))))
@@ -1992,14 +2000,14 @@ impl Editor {
                     row_tinted(id, ic, label, None, false, d, d).on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 }
             };
-            popover()
+            menu()
                 .id("bm-indent-sub")
                 .occlude()
                 .absolute()
                 .left(px(MENU_W + 4.))
                 .top_0()
                 .w(px(MENU_W))
-                .p(px(8.))
+                .py(px(MENU_PAD_Y))
                 .child(indent_row("in-inc", "indent-increase", crate::settings::text("增加缩进"), None, self.core.can_indent(block), BlockAct::Indent))
                 .child(indent_row("in-dec", "indent-decrease", crate::settings::text("减少缩进"), Some("Shift + Tab"), self.core.can_outdent(block), BlockAct::Outdent))
                 .into_any_element()

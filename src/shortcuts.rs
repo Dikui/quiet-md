@@ -180,6 +180,7 @@ fn info(name: &str) -> Option<(usize, &'static str, &'static str)> {
         "ToggleSidebar" => (0, "展开 / 收起侧栏", "Show / hide sidebar"),
         "FocusSearch" => (0, "搜索文档", "Search documents"),
         "ToggleShortcuts" => (0, "查看快捷键", "Show shortcuts"),
+        "OpenFile" => (1, "打开 Markdown 文件", "Open Markdown file"),
         "ImportDoc" => (1, "导入文档", "Import documents"),
         "Save" => (1, "保存文档", "Save document"),
         "EditMode" => (1, "编辑模式", "Edit mode"),

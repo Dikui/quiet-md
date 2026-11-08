@@ -3092,6 +3092,7 @@ impl Core {
             quote: self.parent_kind_is(id, |k| matches!(k, BlockKind::Quote)),
             code_divider: self.parent_kind_is(id, |k| matches!(k, BlockKind::Callout { .. })),
             file: false,
+            alt: false,
         };
         let blocks = crate::paste::markdown_to_blocks(&s, off);
         if blocks.is_empty() {

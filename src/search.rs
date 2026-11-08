@@ -18,9 +18,9 @@ const RECENT: usize = 20;
 const SUMMARY_CHARS: usize = 160;
 /// The summary joins its blocks with three no-break spaces.
 const SUMMARY_SEP: &str = "\u{a0}\u{a0}\u{a0}";
-/// Text column of a row: 540 − list padding 4 / 4 + 6 (scrollbar gutter)
-/// − row padding 12 / 8 − icon 24 + 10.
-const INFO_W: f32 = 472.;
+/// Text column of a row: 540 − list padding 6 / 6 (the right one holds the
+/// scrollbar) − row padding 12 / 8 − icon 24 + 10.
+const INFO_W: f32 = 474.;
 
 /// Case-insensitive match position in `hay`, in `hay`'s own byte offsets.
 pub(crate) fn find_ci(hay: &str, needle_lower: &str) -> Option<Range<usize>> {
@@ -110,6 +110,7 @@ pub(crate) fn summary_text(text: String, mut hits: Vec<Range<usize>>, width: f32
 /// A result's icon: the page's emoji, or the page glyph.
 pub(crate) fn entry_icon(e: &Entry) -> Div {
     match &e.icon {
+        _ if e.meta.markdown => doc_icon_named("doc-md"),
         Some(em) => div().flex_none().size(px(24.)).mr(px(10.)).flex().items_center().justify_center().text_size(px(20.)).child(em.clone()),
         None => doc_icon(),
     }
@@ -117,7 +118,10 @@ pub(crate) fn entry_icon(e: &Entry) -> Div {
 
 /// A page without an emoji: the monochrome page glyph (the sidebar's), in
 /// a 24 slot.
-pub(crate) fn doc_icon() -> Div {
+pub(crate) fn doc_icon() -> Div { doc_icon_named("doc") }
+
+/// A page glyph by name (`doc`, `doc-md` for a Markdown file), in a 24 slot.
+pub(crate) fn doc_icon_named(name: &str) -> Div {
     div()
         .flex_none()
         .size(px(24.))
@@ -125,7 +129,7 @@ pub(crate) fn doc_icon() -> Div {
         .flex()
         .items_center()
         .justify_center()
-        .child(icon("doc", 18., Theme::icon()))
+        .child(icon(name, 18., Theme::icon()))
 }
 
 /// The 24px square buttons at the right of the input row.
@@ -360,8 +364,7 @@ impl Workspace {
             .flex_1()
             .min_h_0()
             .pt(px(4.))
-            .pl(px(4.))
-            .pr(px(10.))
+            .px(px(6.))
             .flex()
             .flex_col()
             .overflow_y_scroll()
@@ -429,7 +432,8 @@ impl Workspace {
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(input)
             .child(div().flex_none().h(px(1.)).bg(Theme::line_divider()))
-            .child(list)
+            // The thumb sits in the list's right padding, over no row.
+            .child(div().flex_1().min_h_0().relative().flex().flex_col().child(list).child(self.home.search_scrollbar.render(&self.search_scroll)))
             .child(footer);
 
         Some(

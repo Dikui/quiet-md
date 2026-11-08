@@ -24,13 +24,16 @@ pub fn panel() -> Div {
 }
 pub const MENU_RADIUS: f32 = 6.;
 pub const ROW_RADIUS: f32 = 4.;
-pub const MENU_ROW_H: f32 = 32.;
-pub const MENU_PAD_Y: f32 = 8.;
+pub const MENU_ROW_H: f32 = crate::ui::MENU_ROW_H;
+/// Dropdown menus look like the app's (`ui::menu`): 6 above and below the
+/// rows, each row 5 in from the sides, 13pt, radius 12 / 6, a quiet hover.
+pub const MENU_PAD_Y: f32 = crate::ui::MENU_PAD_Y;
+pub const MENU_INSET: f32 = crate::ui::MENU_INSET;
 
-pub fn menu_row(id: impl Into<ElementId>, group: SharedString) -> Stateful<Div> {
-    div().id(id).group(group).h(px(32.)).mx(px(4.)).px(px(8.)).flex().items_center().gap(px(12.)).rounded(px(4.))
-        .text_size(px(14.)).line_height(px(22.)).text_color(Theme::text()).cursor_pointer().hover(|s| s.bg(Theme::fill_hover()))
-}
+/// A dropdown menu's panel: the app's menu shell.
+pub fn menu() -> Div { crate::ui::popover() }
+
+pub fn menu_row(id: impl Into<ElementId>, group: SharedString) -> Stateful<Div> { crate::ui::menu_row(id, group) }
 pub fn menu_label(label: impl Into<SharedString>, _group: SharedString, _hover: Hsla) -> Div {
     div().whitespace_nowrap().child(crate::settings::label(label.into()))
 }
