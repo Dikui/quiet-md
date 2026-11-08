@@ -661,7 +661,7 @@ mod tests {
         let base = Path::new("/notes");
         let doc = parse_file(src, "page", Some(base));
         assert_eq!(doc.title.text, "page");
-        assert!(doc.blocks.iter().any(|b| matches!(&b.kind, BlockKind::Image { src, .. } if src == "/notes/img/a b.png")));
+        assert!(doc.blocks.iter().any(|b| matches!(&b.kind, BlockKind::Image { src, .. } if Path::new(src) == base.join("img").join("a b.png"))));
         let out = write_file(&doc, front_matter(src).0, Some(base));
         assert_eq!(out, src);
         assert_eq!(write_file(&parse_file(&out, "page", Some(base)), front_matter(&out).0, Some(base)), out);
