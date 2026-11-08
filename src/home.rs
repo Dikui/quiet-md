@@ -753,19 +753,16 @@ impl Workspace {
             );
         }
         header = header.child(div().w(px(60.)).flex_none());
-        let mut rows = div().id("home-rows").on_mouse_move(cx.listener(|w, ev: &MouseMoveEvent, _, cx| w.track_home_press(ev, cx))).flex_1().min_h_0().overflow_y_scroll().track_scroll(list_scroll).px(px(24.)).pb(px(24.));
+        let mut rows = div().id("home-rows").flex_1().min_h_0().overflow_y_scroll().track_scroll(list_scroll).px(px(24.)).pb(px(24.));
         if entries.is_empty() {
             rows = rows.child(div().pt(px(72.)).child(empty_state("illus/empty-list.svg", crate::settings::text("当前列表暂无内容"))));
         }
         for (i, e) in entries.iter().enumerate() {
             let (id, id2) = (e.id.clone(), e.id.clone());
-            let arm = e.id.clone();
             let menu_on = self.row_menu.as_ref().is_some_and(|m| m.id == e.id);
             let check = self.home_check(e);
             let mut row = div()
-                .id(SharedString::from(format!("home-row-{}", e.id))).relative()
-                .child(self.record_home_card(&e.id))
-                .when(self.manual_home_sort() && check.is_none(), |d| d.on_mouse_down(MouseButton::Left, cx.listener(move |w, ev: &MouseDownEvent, _, cx| w.arm_home_drag(&arm, ev.position, cx))))
+                .id(SharedString::from(format!("home-row-{}", e.id)))
                 .h(px(56.))
                 .flex()
                 .items_center()
@@ -796,7 +793,7 @@ impl Workspace {
                 row = row.child(col_cell().pl(px(24.)).text_size(px(13.)).text_color(Theme::text_caption()).whitespace_nowrap().overflow_hidden().child(cell_text(e, *c)));
             }
             row = row.child(div().w(px(60.)).flex_none().flex().justify_end().pr(px(12.)).when(self.batch.is_none(), |d| d.child(self.home_more(e, format!("home-more-{}", e.id), cx))));
-            rows = rows.child(self.home_motion(&e.id, row.into_any_element()));
+            rows = rows.child(row);
         }
         div().flex_1().min_h_0().flex().flex_col().child(header.mx(px(24.)))
             .child(div().relative().flex_1().min_h_0().flex().flex_col().child(rows).child(self.home.list_scrollbar.render(list_scroll))).into_any_element()
@@ -822,11 +819,10 @@ impl Workspace {
                 div().w_full().h(px(card_h + gap)).px(px(24.)).pb(px(gap))
                     .grid().grid_cols(n as u16).gap(px(gap))
                     .children(entries[start..end].iter().map(|e| {
-                        let card = if e.meta.folder.is_some() { workspace.render_folder_card(e, card_h, window, cx) }
+                        if e.meta.folder.is_some() { workspace.render_folder_card(e, card_h, window, cx) }
                         else if mixed { div().w_full().min_w_0().h(px(card_h)).flex().flex_col().justify_end()
                             .child(workspace.render_home_card(e, card_h * (1. - crate::home_folder::TAB), cx)).into_any_element() }
-                        else { workspace.render_home_card(e, card_h, cx) };
-                        workspace.home_motion(&e.id, card)
+                        else { workspace.render_home_card(e, card_h, cx) }
                     }))
             }).collect()
         }))
@@ -877,11 +873,17 @@ impl Workspace {
             let frame = 4.;
             let menu_on = self.row_menu.as_ref().is_some_and(|m| m.id == e.id);
             let check = self.home_check(e);
-            let (arm, lifted) = (e.id.clone(), self.home_dragging(&e.id));
+            let arm = e.id.clone();
+            // Carried away as a paper: its place stays as an empty slot of the
+            // card's shape (no page, no cover), so nothing half-shows through.
+            if self.home_dragging(&e.id) {
+                return div().id(SharedString::from(format!("home-card-{}", e.id))).w_full().min_w_0().h(px(card_h)).relative()
+                    .child(self.record_home_card(&e.id))
+                    .child(crate::ui::continuous_surface(20., Theme::fill_hover()).size_full())
+                    .into_any_element();
+            }
                 div()
                     .id(SharedString::from(format!("home-card-{}", e.id)))
-                    // Carried away as a paper: the card's place stays as a faint imprint.
-                    .when(lifted, |d| d.opacity(0.28))
                     .when(check.is_none(), |d| d.on_mouse_down(MouseButton::Left, cx.listener(move |w, ev: &MouseDownEvent, _, cx| w.arm_home_drag(&arm, ev.position, cx))))
                     .child(self.record_home_card(&e.id))
                     .w_full().min_w_0().h(px(card_h)).relative().group("home-card")

@@ -349,15 +349,6 @@ impl Workspace {
         cx.notify();
     }
 
-    pub(crate) fn reorder_home_item(&mut self, id: &str, before: Option<String>, cx: &mut Context<Self>) {
-        let parent = self.entries.iter().find(|e| e.id == id).and_then(|e| e.meta.parent.clone());
-        let mut movement = PendingMove { id: id.to_string(), parent, before, history: 0 };
-        let previous = self.entries.clone();
-        self.apply_tree_move(&movement);
-        movement.history = self.remember_files(previous, crate::settings::tr("手动排序", "Manual order"));
-        if movement.history != 0 { self.folder_drag.pending.push_back(movement); self.save_next_tree_move(cx); }
-        self.sync_sub_pages(cx); cx.notify();
-    }
 
     pub(crate) fn reapply_pending_tree_moves(&mut self) {
         for movement in self.folder_drag.pending.clone() { self.apply_tree_move(&movement); }
