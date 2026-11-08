@@ -33,6 +33,8 @@ pub(crate) struct HomeFolders {
     fx: HashMap<String, FolderFx>,
     hovered: Option<String>,
     pub(crate) drag: Option<HomeDrag>,
+    /// Files dragged in from outside.
+    pub(crate) file_drop: Option<FileDrop>,
     /// Last-frame window bounds of the folder and document cards, by entry id.
     bounds: Rc<RefCell<HashMap<String, Bounds<Pixels>>>>,
 }
@@ -255,7 +257,7 @@ impl Workspace {
         let w = self.home.folders.bounds.borrow().get(&id).map_or(236., |b| f32::from(b.size.width));
         let h = card_h;
         let hot = self.home.folders.hovered.as_ref() == Some(&id) && self.home.folders.drag.is_none();
-        let over = self.home.folders.drag.as_ref().is_some_and(|d| d.started && !d.returning && d.over.as_ref() == Some(&id));
+        let over = self.home.folders.drag.as_ref().is_some_and(|d| d.started && !d.returning && d.over.as_ref() == Some(&id)) || self.file_drop_over(&id);
         let front = self.home.folders.fx.get(&id).and_then(|f| f.front.clone());
         let (kids, count) = self.folder_papers(&id, front.as_ref());
 
@@ -482,5 +484,263 @@ impl Workspace {
                 .shadow(theme::shadow_panel()).rounded(px(10.))
                 .child(lines));
         Some(deferred(layer).with_priority(5).into_any_element())
+    }
+}
+
+// ---- Files dragged in from the Finder
+
+/// A drag of files from outside (the Finder) over 主页 or a folder's page:
+/// the list dims behind a receiving tray, a glass folder whose papers (one
+/// per file, up to three) rise out of it, follow the pointer and part as it
+/// comes near; let go, they slide in, the folder dips, and the documents are
+/// imported where it says. Held over a folder card, that folder opens its
+/// mouth instead and the tray steps back.
+pub(crate) struct FileDrop {
+    paths: Vec<std::path::PathBuf>,
+    md: usize,
+    xml: usize,
+    dirs: usize,
+    other: usize,
+    at: Point<Pixels>,
+    /// The folder card under the pointer.
+    over: Option<String>,
+    /// The tray's bounds last frame.
+    zone: Rc<std::cell::Cell<Option<Bounds<Pixels>>>>,
+    inside: bool,
+    show: Fade,
+    veil: Fade,
+    arm: Fade,
+    dip: Fade,
+    land: Fade,
+    shake: Fade,
+    rise: [Fade; PAPERS],
+    /// The pointer's place over the tray (−1…1 each way), which the papers lean toward.
+    tilt: Spring<2>,
+    /// Let go: where the files went (None: the top of 我的文档).
+    landed: Option<Option<String>>,
+    leaving: bool,
+    born: Instant,
+    last: Option<Instant>,
+}
+
+/// Tray illustration: the glass folder's box.
+const ART_W: f32 = 196.;
+const ART_H: f32 = 150.;
+
+impl FileDrop {
+    fn new(paths: Vec<std::path::PathBuf>) -> Self {
+        let (mut md, mut xml, mut dirs, mut other) = (0, 0, 0, 0);
+        for p in &paths {
+            if p.is_dir() { dirs += 1; }
+            else if crate::local_files::is_markdown_path(p) { md += 1; }
+            else if p.extension().is_some_and(|x| x.eq_ignore_ascii_case("xml")) { xml += 1; }
+            else { other += 1; }
+        }
+        Self {
+            paths, md, xml, dirs, other, at: point(px(0.), px(0.)), over: None, zone: Default::default(), inside: false,
+            show: Fade::new(0., 240., 21.), veil: Fade::new(0., 160., 25.), arm: Fade::new(0., 300., 23.),
+            dip: Fade::new(0., 520., 15.), land: Fade::new(0., 150., 21.), shake: Fade::new(0., 700., 9.),
+            // Each paper surfaces a little after the one in front.
+            rise: [Fade::new(0., 320., 21.), Fade::new(0., 210., 17.), Fade::new(0., 140., 14.)],
+            tilt: Spring::new([0., 0.]), landed: None, leaving: false, born: Instant::now(), last: None,
+        }
+    }
+
+    fn importable(&self) -> usize { self.md + self.xml + self.dirs }
+
+    /// "2 个 Markdown 文件 · 1 个文件夹".
+    fn summary(&self) -> String {
+        let mut parts = vec![];
+        if self.md > 0 { parts.push(crate::localized_format!("{} 个 Markdown 文件", "{} Markdown files", self.md)); }
+        if self.xml > 0 { parts.push(crate::localized_format!("{} 个 DocxXML 文件", "{} DocxXML files", self.xml)); }
+        if self.dirs > 0 { parts.push(crate::localized_format!("{} 个文件夹", "{} folders", self.dirs)); }
+        if self.other > 0 && !parts.is_empty() { parts.push(crate::localized_format!("{} 个不支持的文件会被跳过", "{} unsupported skipped", self.other)); }
+        parts.join(" · ")
+    }
+
+    /// The front paper's tag: what kind of file leads.
+    fn tag(&self) -> Option<&'static str> {
+        if self.md > 0 { Some("MD") } else if self.xml > 0 { Some("XML") } else { None }
+    }
+}
+
+impl Workspace {
+    /// Files dragged over 主页 or a folder's page (the pointer, the folder
+    /// card under it, whether it is over the tray).
+    pub(crate) fn file_drag_move(&mut self, ev: &DragMoveEvent<ExternalPaths>, cx: &mut Context<Self>) {
+        let paths = ev.drag(cx).paths().to_vec();
+        self.file_drag_at(ev.event.position, paths, cx);
+    }
+
+    /// `file_drag_move` from a position and the dragged paths (scripted runs too).
+    pub(crate) fn file_drag_at(&mut self, at: Point<Pixels>, paths: Vec<std::path::PathBuf>, cx: &mut Context<Self>) {
+        if !matches!(self.view, crate::app::View::Home | crate::app::View::Folder) { return; }
+        let fresh = self.home.folders.file_drop.as_ref().is_none_or(|d| d.landed.is_some());
+        if fresh { self.home.folders.file_drop = Some(FileDrop::new(paths)); }
+        let shown = if self.view == crate::app::View::Folder { self.level_entries(self.folder_current.as_deref()) } else { self.home_entries() };
+        let over = shown.iter().filter(|e| e.meta.folder.is_some())
+            .find(|e| self.home.folders.bounds.borrow().get(&e.id).is_some_and(|b| b.contains(&at)))
+            .map(|e| e.id.clone());
+        let Some(d) = self.home.folders.file_drop.as_mut() else { return };
+        d.leaving = false;
+        if over != d.over {
+            // The folder notices, as it does for a dragged card.
+            if let Some(f) = over.as_ref().and_then(|k| self.home.folders.fx.get_mut(k)) { f.dip.v -= 1.6; }
+            d.over = over;
+        }
+        d.at = at;
+        d.inside = d.zone.get().is_some_and(|z| z.contains(&at));
+        cx.notify();
+    }
+
+    /// Let go over the list: import into the folder under the pointer, the
+    /// folder page shown, or the top of 我的文档; nothing to import, a shake.
+    pub(crate) fn file_dropped(&mut self, paths: &ExternalPaths, window: &mut Window, cx: &mut Context<Self>) {
+        self.file_drop_paths(paths.paths().to_vec(), window, cx);
+    }
+
+    pub(crate) fn file_drop_paths(&mut self, paths: Vec<std::path::PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
+        if !matches!(self.view, crate::app::View::Home | crate::app::View::Folder) { return; }
+        if self.home.folders.file_drop.is_none() { self.home.folders.file_drop = Some(FileDrop::new(paths)); }
+        let page = if self.view == crate::app::View::Folder { self.folder_current.clone() } else { None };
+        let Some(d) = self.home.folders.file_drop.as_mut() else { return };
+        if d.importable() == 0 {
+            d.shake.v += 34.;
+            d.leaving = true;
+            cx.notify();
+            return;
+        }
+        let target = d.over.clone().or(page);
+        d.landed = Some(target.clone());
+        d.land.to = 1.;
+        d.dip.v += 5.5;
+        if let Some(f) = d.over.as_ref().and_then(|k| self.home.folders.fx.get_mut(k)) { f.dip.v += 5.5; }
+        let (dirs, files): (Vec<_>, Vec<_>) = d.paths.iter().cloned().partition(|p| p.is_dir());
+        let files: Vec<_> = files.into_iter().filter(|p| crate::local_files::is_markdown_path(p) || p.extension().is_some_and(|x| x.eq_ignore_ascii_case("xml"))).collect();
+        if !files.is_empty() { self.import_paths(&files, target.clone(), false, window, cx); }
+        for dir in &dirs { self.import_folder(dir, target.clone(), false, window, cx); }
+        cx.notify();
+    }
+
+    pub(crate) fn file_drop_over(&self, id: &str) -> bool {
+        self.home.folders.file_drop.as_ref().is_some_and(|d| d.landed.is_none() && !d.leaving && d.importable() > 0 && d.over.as_deref() == Some(id))
+    }
+
+    /// The veil and the tray, over the page while files are dragged in.
+    pub(crate) fn render_file_drop(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if !matches!(self.view, crate::app::View::Home | crate::app::View::Folder) { self.home.folders.file_drop = None; return None; }
+        let dragging = cx.has_active_drag() || crate::devtools::file_drag();
+        let target_title = |w: &Self, id: Option<&String>| id.and_then(|id| w.entries.iter().find(|e| &e.id == id)).map(|e| display_title(&e.title))
+            .unwrap_or_else(|| crate::settings::tr("我的文档", "My documents").to_string());
+        let page = if self.view == crate::app::View::Folder { self.folder_current.clone() } else { None };
+        let d = self.home.folders.file_drop.as_ref()?;
+        let place = target_title(self, d.landed.clone().flatten().as_ref().or(d.over.as_ref()).or(page.as_ref()));
+        let d = self.home.folders.file_drop.as_mut()?;
+        // The drag went away without a drop here (left the window, or let go elsewhere).
+        if !dragging && d.landed.is_none() { d.leaving = true; }
+        let now = Instant::now();
+        let dt = d.last.replace(now).map_or(1. / 120., |t| now.duration_since(t).as_secs_f32().min(0.032));
+        let reject = d.importable() == 0;
+        // Over a folder card (and after a drop into one) the folder answers; the tray steps back.
+        let over = d.over.is_some() && !reject && d.landed.as_ref().is_none_or(|t| t.is_some() && *t == d.over);
+        d.show.to = if d.leaving { 0. } else { 1. };
+        d.veil.to = if d.leaving { 0. } else if over { 0.12 } else { 1. };
+        d.arm.to = if !reject && !d.leaving && (d.inside || d.landed.is_some()) { 1. } else { 0. };
+        for (i, r) in d.rise.iter_mut().enumerate() { r.to = if d.leaving && d.landed.is_none() { 0. } else { 1. - 0.12 * i as f32 }; }
+        let zone = d.zone.get();
+        d.tilt.target = match zone.filter(|_| d.inside && d.landed.is_none()) {
+            Some(z) => [((d.at.x - z.center().x) / (z.size.width / 2.)).clamp(-1., 1.), ((d.at.y - z.center().y) / (z.size.height / 2.)).clamp(-1., 1.)],
+            None => [0., 0.],
+        };
+        for f in [&mut d.show, &mut d.veil, &mut d.arm, &mut d.dip, &mut d.land, &mut d.shake] { f.step(dt); }
+        d.tilt.step(dt);
+        for r in &mut d.rise { r.step(dt); }
+        // Landed and settled: the tray goes.
+        if d.landed.is_some() && d.land.p > 0.97 && !d.leaving { d.leaving = true; }
+        if d.leaving && d.show.p < 0.01 && d.veil.p < 0.01 { self.home.folders.file_drop = None; cx.notify(); return None; }
+        // The tray breathes while it waits, so it draws every frame while shown.
+        window.request_animation_frame();
+
+        // ---- The illustration's pose.
+        let (show, arm, land, dip) = (d.show.unit(), d.arm.p, d.land.p, d.dip.p);
+        let t = d.born.elapsed().as_secs_f32();
+        let breath = 0.5 + 0.5 * (t * std::f32::consts::TAU / 1.8).sin();
+        let shake = d.shake.p * (t * 46.).sin() * 0.35;
+        let n = d.importable().clamp(1, PAPERS);
+        let (w, h) = (ART_W, ART_H);
+        let (o, m) = (arm.max(0.35 * show), arm);
+        let lift = -5. * o - 2. * m + 3. * dip + 6. * land;
+        let [tx, ty] = d.tilt.p;
+        let pose_of = |i: usize, r: f32| -> Paper {
+            let (rest, rise, part) = [
+                ((0.0, 0.16, 0.0), (0.0, -0.07, 0.0), (0.0, -0.03, 0.0)),
+                ((0.03, 0.135, 2.5), (0.03, -0.055, 2.0), (0.06, -0.02, 4.0)),
+                ((-0.035, 0.115, -3.0), (-0.03, -0.05, -2.5), (-0.06, -0.02, -4.0)),
+            ][i];
+            let (pw, ph) = (0.62 * w, 0.62 * h);
+            // Out of the folder by `r`, higher while armed, sunk back in by `land`.
+            let up = r * (1.6 + 1.1 * arm) - 2.4 * land;
+            let dx = (rest.0 + rise.0 * up + part.0 * m) * w + tx * (5. + 3. * i as f32) * (1. - land);
+            let top = (rest.1 + rise.1 * up + part.1 * m) * h + lift + ty * 3. * (1. - land);
+            Paper { cx: w / 2. + dx, cy: top + ph / 2., w: pw, h: ph, rot: (rest.2 + rise.2 * up + part.2 * m + 2.5 * tx * (1. - land)).to_radians(), seed: 7 + i as u64 }
+        };
+        let papers: Vec<Paper> = (0..n).map(|i| pose_of(i, d.rise[i].p)).collect();
+        let lean = 0.03 * h * o + 0.045 * h * m + 0.05 * h * dip;
+        let pose = Pose { w, h, lift, open: o, yl: 0.49 * h + lean, yr: 0.54 * h + lean, inset: -(3. * o + 7. * m), papers };
+        let tag = d.tag();
+        // The front paper's name: the first file of the kind it shows.
+        let first = d.paths.iter().find(|p| match tag { Some("MD") => crate::local_files::is_markdown_path(p), Some(_) => p.extension().is_some_and(|x| x.eq_ignore_ascii_case("xml")), None => p.is_dir() })
+            .or(d.paths.first()).and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let summary = d.summary();
+        let record = d.zone.clone();
+
+        // ---- Elements.
+        let accent = Theme::primary();
+        let quiet = if reject { 1. } else { 0. };
+        let ring = if reject { ca(craft::N1000, 0.12) } else { accent.opacity(0.22 + 0.16 * breath * (1. - arm) + 0.55 * arm) };
+        let (title, sub) = if reject {
+            (crate::settings::tr("这些文件不能导入", "These files can't be imported").to_string(), crate::settings::tr("支持 Markdown、DocxXML 文件和文件夹", "Markdown, DocxXML files and folders are supported").to_string())
+        } else if d.landed.is_some() {
+            (crate::localized_format!("已导入到「{}」", "Imported into “{}”", place), summary)
+        } else if over {
+            (crate::localized_format!("松手放入「{}」", "Release to put it in “{}”", place), summary)
+        } else {
+            (crate::localized_format!("松手导入到「{}」", "Release to import into “{}”", place), summary)
+        };
+        let back = { let pose = pose.clone(); canvas(|_, _, _| {}, move |b, _, window, _| {
+            back_plate(b.origin, &pose, window);
+            // The front paper is the first file: its kind and name in place of a heading.
+            for (i, p) in pose.papers.iter().enumerate().rev() { p.paint(b.origin, if i == 0 { Face::Titled } else { Face::Sketch }, window); }
+        }).absolute().inset_0() };
+        let chip = pose.papers.first().copied().map(|p| div().absolute().left(px(p.cx - p.w / 2. + 10.)).top(px(p.cy - p.h / 2. + 9.)).w(px(p.w - 20.))
+            .flex().items_center().gap(px(5.)).overflow_hidden()
+            .map(|d| match tag {
+                Some(t) => d.child(div().flex_none().px(px(4.)).h(px(14.)).rounded(px(4.)).bg(accent).flex().items_center()
+                    .text_size(px(8.5)).line_height(px(12.)).font_weight(FontWeight::BOLD).text_color(gpui::white()).child(t)),
+                None => d.child(icon("folder", 12., Theme::icon())),
+            })
+            .child(div().min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis().text_size(px(10.)).line_height(px(14.))
+                .font_weight(FontWeight::SEMIBOLD).text_color(Theme::text()).child(ui_text(first.clone()))));
+        let front = { let pose = pose.clone(); canvas(|_, _, _| {}, move |b, _, window, _| glass(b.origin, &pose, window)).absolute().inset_0() };
+        let art = div().relative().flex_none().w(px(w)).h(px(h)).ml(px(shake * 18.)).opacity(1. - 0.35 * quiet)
+            .child(back).children(chip).child(front);
+        let grow = 0.9 + 0.1 * show + 0.015 * arm;
+        let tray = div().relative().flex_none().w(px(440. * grow)).h(px(330. * grow)).rounded(px(28.))
+            .border_2().border_color(ring)
+            // An opaque tray (the list stays behind the veil), tinted with the accent as it arms.
+            .bg(theme::raised(Theme::bg_body()))
+            .child(div().absolute().inset_0().rounded(px(26.))
+                .bg(linear_gradient(180., linear_color_stop(accent.opacity(0.025 + 0.05 * arm), 0.), linear_color_stop(accent.opacity(0.06 + 0.07 * arm), 1.)))
+                .when(reject, |d| d.bg(ca(craft::N1000, 0.03))))
+            .shadow(vec![BoxShadow { color: accent.opacity(0.10 * arm), offset: point(px(0.), px(10.)), blur_radius: px(40.), spread_radius: px(0.) }])
+            .opacity(show * (0.08 + 0.92 * ((d.veil.p - 0.12) / 0.88).clamp(0., 1.)).min(show))
+            .flex().flex_col().items_center().justify_center().gap(px(6.))
+            .child(canvas(move |b, _, _| record.set(Some(b)), |_, _, _, _| {}).absolute().inset_0())
+            .child(art)
+            .child(div().mt(px(14.)).text_size(px(16.)).line_height(px(24.)).font_weight(FontWeight::SEMIBOLD)
+                .text_color(if reject { Theme::text_caption() } else { Theme::text() }).child(ui_text(title)))
+            .child(div().text_size(px(13.)).line_height(px(20.)).text_color(Theme::text_caption()).child(ui_text(sub)));
+        let veil = theme::raised(Theme::bg_body()).opacity(0.86 * d.veil.p.clamp(0., 1.));
+        Some(div().absolute().inset_0().bg(veil).flex().items_center().justify_center().child(tray).into_any_element())
     }
 }

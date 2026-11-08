@@ -27,7 +27,8 @@ impl<'a> Tree<'a> {
         let parent = |e: &'a Entry| e.meta.parent.as_deref().filter(|p| ids.contains(p) && *p != e.id);
         let mut roots: Vec<&Entry> = vec![];
         let mut kids: HashMap<&str, Vec<&Entry>> = HashMap::new();
-        for e in entries {
+        // 本机文件 are not in 我的文档: the sidebar lists them on their own.
+        for e in entries.iter().filter(|e| !e.meta.local()) {
             match parent(e) {
                 Some(p) => kids.entry(p).or_default().push(e),
                 None => roots.push(e),
@@ -41,7 +42,7 @@ impl<'a> Tree<'a> {
                 stack.extend(kids.get(id).map_or(vec![], |v| v.iter().map(|e| e.id.as_str()).collect()));
             }
         }
-        for e in entries {
+        for e in entries.iter().filter(|e| !e.meta.local()) {
             if !seen.contains(e.id.as_str()) {
                 seen.insert(&e.id);
                 if let Some(v) = parent(e).and_then(|p| kids.get_mut(p)) {
@@ -285,7 +286,7 @@ impl Workspace {
         let page_icon = |e: &Entry| match &e.icon {
             _ if e.meta.folder.is_some() => icon("folder", 16., Theme::icon()).into_any_element(),
             Some(em) => div().size(px(16.)).flex_none().flex().items_center().justify_center().text_size(px(14.)).child(em.clone()).into_any_element(),
-            None => icon("doc", 16., Theme::icon()).into_any_element(),
+            None => icon(if e.meta.markdown { "doc-md" } else { "doc" }, 16., Theme::icon()).into_any_element(),
         };
         let mut list = div().id("move-tree").flex_1().min_w_0().px(px(8.)).py(px(12.)).overflow_y_scroll().track_scroll(&dlg.scroll);
         if q.is_empty() {

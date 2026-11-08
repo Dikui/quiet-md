@@ -178,6 +178,16 @@ impl Workspace {
         if !self.folded[1] {
             list = list.child(self.render_folder_rows(window, cx));
         }
+        // 本机文件: Markdown files edited where they are, outside the library.
+        let local = self.local_entries();
+        if !local.is_empty() {
+            list = list.child(div().h(px(GROUP_GAP - SECTION_TOP))).child(self.section(2, crate::settings::tr("本机文件", "Files on this computer"), cx));
+            if !self.folded[2] {
+                for e in local {
+                    list = list.child(self.doc_row(e, "local", 0, false, cx));
+                }
+            }
+        }
 
         // The footer holds one row: 设置 (存储管理 and 回收站 live in 设置).
         // The 批量操作 toolbar keeps the footer glyphs: bare on the sidebar, a rounded fill on hover.
@@ -655,6 +665,7 @@ impl Workspace {
                             .child(icon("disclosure", ROW_ICON, Theme::icon())
                                 .with_transformation(Transformation::rotate(radians(if open { std::f32::consts::FRAC_PI_2 } else { 0. }))))))
                     }
+                    _ if e.meta.markdown => d.child(icon("doc-md", ROW_ICON, Theme::icon())),
                     Some(em) => d.text_size(px(13.)).line_height(px(20.)).child(em.clone()),
                     None => d.child(icon("doc", ROW_ICON, Theme::icon())),
                 })
@@ -667,14 +678,15 @@ impl Workspace {
     pub(crate) fn render_row_menu(&self, window: &Window, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let Some(m) = self.row_menu.clone() else { return vec![] };
         if !m.batch && self.entries.iter().any(|e| e.id == m.id && e.meta.folder.is_some()) { return self.folder_row_menu(m, cx); }
+        if !m.batch && self.entries.iter().any(|e| e.id == m.id && e.meta.local()) { return self.local_row_menu(m, cx); }
         let Some((pinned, starred)) = self.entries.iter().find(|e| e.id == m.id).map(|e| (e.meta.pinned, e.meta.starred > 0)) else { return vec![] };
-        // The context menu: accent highlight with a white label.
+        // The context menu: rows on the quiet hover fill.
         let item_c = |id: &'static str, ic: &'static str, label: &'static str, color: Hsla, icon_color: Hsla| {
             let g = SharedString::from(id);
             crate::ui::menu_row(id, g.clone())
                 .mx(px(0.))
                 .text_color(color)
-                .child(icon(ic, 16., icon_color).group_hover(g.clone(), |s| s.text_color(gpui::white())))
+                .child(icon(ic, 16., icon_color))
                 .child(div().flex_1().min_w_0().child(crate::ui::menu_label(label, g, gpui::white())))
         };
         let item = |id, ic, label| item_c(id, ic, label, Theme::text(), Theme::icon());
@@ -762,8 +774,8 @@ impl Workspace {
             .child(divider())
             .child(
                 item("rm-download", "export", crate::settings::text("下载"))
-                    .when(m.sub, |d| d.bg(Theme::menu_highlight()).text_color(gpui::white()))
-                    .child(icon("chevron-right", 10., if m.sub { gpui::white() } else { Theme::icon() }).group_hover("rm-download", |s| s.text_color(gpui::white())))
+                    .when(m.sub, |d| d.bg(Theme::fill_hover()))
+                    .child(icon("chevron-right", 10., Theme::icon()))
                     .on_hover(set_sub(true)),
             )
             .child(

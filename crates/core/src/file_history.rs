@@ -72,6 +72,8 @@ impl Store {
     pub fn accept_file_title(&self, id: &str, title: &str) -> Result<()> {
         let mut loaded = self.loaded.borrow_mut();
         let Some(previous) = loaded.get(id) else { return Ok(()) };
+        // A Markdown file's title is not in the file.
+        if self.is_markdown(id) { return Ok(()); }
         let mut expected = docxml::parse(previous)?;
         expected.title = crate::model::RichText::plain(title);
         let disk = std::fs::read_to_string(self.path(id))?;
@@ -136,6 +138,7 @@ impl Store {
                     if from.place() != to.place() { m.parent = to.parent.clone(); m.order = to.order; m.root_order = to.root_order; }
                     if from.title != to.title {
                         if to.folder { m.folder = Some(to.title.clone()); }
+                        else if m.markdown { m.name = Some(to.title.clone()); }
                         else {
                             let path = self.path(&c.id); let bytes = std::fs::read(&path)?;
                             let mut doc = docxml::parse(std::str::from_utf8(&bytes)?)?;
@@ -148,8 +151,11 @@ impl Store {
                 _ => {},
             }
         }
-        // Validate the resulting graph before touching files (including external changes).
-        for (id, meta) in &index {
+        // Validate what this gesture moves before touching files (including
+        // external changes). Other entries are not its business: an old page
+        // whose parent is gone already shows at the top level, and must not
+        // block every undo in the library.
+        for (id, meta) in changes.iter().filter_map(|c| index.get(&c.id).map(|m| (&c.id, m))) {
             let mut seen = std::collections::HashSet::from([id.as_str()]);
             let mut parent = meta.parent.as_deref();
             while let Some(p) = parent {

@@ -47,6 +47,7 @@ python3 tools/harness/compare.py tools/harness/examples/menus.txt <旧版二进�
 | `deskshot <名字> [边距]` | 连同窗口下面的内容截图，四周多留「边距」pt（默认 48）。窗口下面先用 `shared-mock/guides/backdrop.swift` 铺一张壁纸，见 `shared-mock/guides/shots.sh` |
 | `bench <n> <命令>` | 把一条命令跑 n 次，每次同步画一帧，输出耗时 |
 | `record <文件.mp4>` / `record stop` / `glide` / `scroll` / `caption` | 录制演示视频 |
+| `filedrag x y <路径>[\|<路径>…]` / `filedrop x y` / `fileleave` | 模拟从访达拖文件进窗口：拖到 (x, y)、在 (x, y) 松手、移出窗口 |
 | `activate` | 让窗口成为 key window。**会抢焦点，一般不要用** |
 | `quit` | 退出（`run.py` 会自动在末尾追加） |
 

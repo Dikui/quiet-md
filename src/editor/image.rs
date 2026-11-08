@@ -1950,8 +1950,11 @@ fn decode_rotated(path: &Path, crop: [f32; 4], rot: u8) -> Option<Arc<RenderImag
 
 /// A new image block for pasted or picked bytes, stored in the assets
 /// folder (format, size and pixel checks on upload).
-pub(super) fn image_block_from(bytes: &[u8], ext: &str) -> Result<Block, &'static str> {
-    let path = store_image(bytes, ext)?;
+pub(super) fn image_block_from(bytes: &[u8], ext: &str) -> Result<Block, &'static str> { image_block_named(bytes, ext, None) }
+
+/// `image_block_from` for a file that has a name of its own, which its copy keeps.
+fn image_block_named(bytes: &[u8], ext: &str, name: Option<&str>) -> Result<Block, &'static str> {
+    let path = store_image_named(bytes, ext, name)?;
     let mut b = Block::new(
         BlockKind::Image { src_kind: "src".into(), src: path.to_string_lossy().to_string(), width: None, height: None, caption: None, crop: None },
         RichText::default(),
@@ -1961,7 +1964,12 @@ pub(super) fn image_block_from(bytes: &[u8], ext: &str) -> Result<Block, &'stati
 }
 
 /// Checks picked or pasted image bytes and copies them into the assets folder.
-pub(super) fn store_image(bytes: &[u8], ext: &str) -> Result<PathBuf, &'static str> {
+pub(super) fn store_image(bytes: &[u8], ext: &str) -> Result<PathBuf, &'static str> { store_image_named(bytes, ext, None) }
+
+/// `store_image`; an image with a `name` (a picked or dropped file) is kept
+/// as `<8 hex>-<name>.<ext>`, so its name survives in the library and in the
+/// copy beside a Markdown file. A pasted one is just `<uuid>.<ext>`.
+fn store_image_named(bytes: &[u8], ext: &str, name: Option<&str>) -> Result<PathBuf, &'static str> {
     let ext = ext.to_ascii_lowercase();
     if !FORMATS.contains(&ext.as_str()) {
         return Err(BAD_FORMAT);
@@ -1974,7 +1982,11 @@ pub(super) fn store_image(bytes: &[u8], ext: &str) -> Result<PathBuf, &'static s
         .ok()
         .and_then(|r| r.into_dimensions().ok())
         .ok_or(BAD_DIMS)?;
-    let path = Store::assets_dir().join(format!("{}.{ext}", uuid::Uuid::new_v4()));
+    let id = uuid::Uuid::new_v4().to_string();
+    let name: Option<String> = name.map(|n| n.chars().map(|c| if matches!(c, '/' | '\\' | ':') || c.is_control() { '_' } else { c }).take(80).collect::<String>())
+        .map(|n| n.trim().trim_start_matches('.').to_string()).filter(|n| !n.is_empty());
+    let file = match name { Some(n) => format!("{}-{n}.{ext}", &id[..8]), None => format!("{id}.{ext}") };
+    let path = Store::assets_dir().join(file);
     std::fs::write(&path, bytes).map_err(|_| BAD_DIMS)?;
     Ok(path)
 }
@@ -1988,7 +2000,7 @@ fn image_block_from_file(p: &Path) -> Result<Block, &'static str> {
         return Err(TOO_BIG);
     }
     let bytes = std::fs::read(p).map_err(|_| BAD_DIMS)?;
-    image_block_from(&bytes, &ext)
+    image_block_named(&bytes, &ext, p.file_stem().and_then(|s| s.to_str()))
 }
 
 /// File name of a remote image's download in `assets/remote`.

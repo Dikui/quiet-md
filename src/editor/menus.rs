@@ -181,6 +181,11 @@ pub const SLASH_ITEMS: &[SlashItem] = &[
     SlashItem { kind: SlashKind::Countdown, label: "倒计时", icon: "timer", color: ORANGE, group: 3, keywords: &["倒计时", "djs", "timer", "daojishi", "countdown"] },
 ];
 
+/// What a Markdown file can hold: blocks Markdown writes back as they are.
+pub fn markdown_ok(kind: SlashKind) -> bool {
+    !matches!(kind, SlashKind::File | SlashKind::Grid | SlashKind::Callout | SlashKind::Formula | SlashKind::Button | SlashKind::Reminder | SlashKind::Countdown)
+}
+
 /// Whether a basic-group item shows in the icon grid. 文本 shows only where
 /// the new block isn't already a text line (在下方添加, "/" after text), and
 /// 任务 takes its place on an empty line; 任务 and 高亮块 also sit in 常用, so

@@ -415,7 +415,7 @@ impl Theme {
     /// Captions under media and code (weight 300).
     #[allow(dead_code)]
     pub fn caption() -> Hsla { c(0x7e8287) }
-    /// Menu row highlight (native NSMenu: accent, white label).
+    /// The old accent menu highlight; kept as a theme token, menus now hover with `fill_hover`.
     pub fn menu_highlight() -> Hsla { c(craft::B500) }
     /// Menus / popovers body (quick-entry & native menus).
     pub fn popover_bg() -> Hsla { c(0xfafafa) }

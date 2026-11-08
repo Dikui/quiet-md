@@ -19,6 +19,7 @@
 - 能有子级的只有 `BlockKind::nests()` 的 block 和容器（引用、高亮块、分栏、列）。代码块里没有样式和行内对象。
 - **DocxXML 写出的格式要稳定。** 改了读写逻辑，`crates/core/tests/fixtures/all-blocks.xml` 必须仍能原样往返。新增 block 类型时，把它的规范写法加进这个 fixture。
 - **颜色用 `Theme::*` 语义 token**，其次是 `theme::craft` 色阶（`c(craft::N300)`）。只有实测值才写十六进制并注明出处。阴影用 `theme::shadow_*`，菜单外壳用 `ui::popover` / `ui::menu_row`。
+- **新图标先找 Nucleo（UI Outline 18，和现有图标同一套）**，Nucleo 里没有合适的再自己画。自己画的在 SVG 开头注释写明「本项目绘制」。增删图标时同步 THIRD_PARTY.md 里的数量和清单：Nucleo 授权允许开源项目最多用 100 个。
 - 改了 `vendor/` 的代码，同步更新 vendor/PATCHES.md。
 - 改了文档库目录布局、会让旧版本误读时，把 `store::FORMAT` 加一。Meta 的新字段一律 `#[serde(default)]`。
 

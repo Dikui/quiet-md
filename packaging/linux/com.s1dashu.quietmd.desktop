@@ -2,8 +2,9 @@
 Type=Application
 Name=Quiet.md
 Comment=Local notes
-Exec=quiet_md
+Exec=quiet_md %F
 Icon=com.s1dashu.quietmd
 Terminal=false
 Categories=Office;TextEditor;
+MimeType=text/markdown;text/x-markdown;
 StartupWMClass=com.s1dashu.quietmd

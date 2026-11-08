@@ -201,12 +201,12 @@ impl Workspace {
 
     pub(crate) fn render_trash_menu(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let (id, pos, corner) = self.trash_menu.clone()?;
-        // The native context menu: 26pt rows, accent highlight with a white label.
+        // The context menu: 32pt rows on the quiet hover fill.
         let item = |key: &'static str, ic: &'static str, label: &'static str, color: Hsla| {
             let g = SharedString::from(key);
             crate::ui::menu_row(key, g.clone())
                 .text_color(color)
-                .child(icon(ic, 16., if color == Theme::icon() { Theme::icon() } else { color }).group_hover(g.clone(), |s| s.text_color(gpui::white())))
+                .child(icon(ic, 16., if color == Theme::icon() { Theme::icon() } else { color }))
                 .child(menu_label(label, g, gpui::white()))
         };
         let (a, b) = (id.clone(), id);

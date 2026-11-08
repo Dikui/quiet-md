@@ -230,6 +230,9 @@ pub struct Editor {
     pub created: u64,
     /// 阅读模式 (`reading.rs`), and the document as it was when it began.
     pub read_only: bool,
+    /// A Markdown file: only what Markdown can hold is offered (no colors,
+    /// alignment, callouts, columns, add-on blocks, icon or cover).
+    pub markdown: bool,
     pub(super) ro_doc: Option<crate::model::Document>,
     /// The 文档信息 row under the title.
     pub info: crate::store::InfoRow,
@@ -432,6 +435,7 @@ impl Editor {
             modified,
             created: modified,
             read_only: false,
+            markdown: false,
             ro_doc: None,
             info: Default::default(),
             cd,
@@ -622,7 +626,8 @@ impl Editor {
         };
         let (grid, with_text) = (self.slash_grid(), self.slash_grid_text());
         let ranked: Vec<usize> =
-            ranked.into_iter().filter(|i| menus::SLASH_ITEMS[*i].group != 0 || menus::basic_visible(menus::SLASH_ITEMS[*i].kind, grid, with_text)).collect();
+            ranked.into_iter().filter(|i| menus::SLASH_ITEMS[*i].group != 0 || menus::basic_visible(menus::SLASH_ITEMS[*i].kind, grid, with_text))
+                .filter(|i| !self.markdown || menus::markdown_ok(menus::SLASH_ITEMS[*i].kind)).collect();
         let mut groups: Vec<usize> = vec![];
         for i in &ranked {
             let g = menus::SLASH_ITEMS[*i].group;
@@ -1028,6 +1033,7 @@ impl Editor {
 
     /// Text color / background from the color panel (None = default).
     pub fn apply_color(&mut self, text: Option<Option<ColorName>>, bg: Option<Option<ColorName>>, window: &mut Window, cx: &mut Context<Self>) {
+        if self.markdown { return; }
         if let Some(t) = &text {
             self.last_color.0 = t.clone();
         }
@@ -1171,6 +1177,7 @@ impl Editor {
     }
 
     pub fn align(&mut self, a: Align, window: &mut Window, cx: &mut Context<Self>) {
+        if self.markdown { return; }
         let ids = self.core.selected_blocks();
         self.core.set_align(&ids, a);
         self.changed(window, cx);
