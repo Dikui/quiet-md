@@ -17,13 +17,19 @@ chmod +x "$tool"
 appdir="$stage/Quiet.md.AppDir"
 mkdir -p "$appdir/usr/share/doc/quiet-md"
 cp LICENSE THIRD_PARTY.md "$appdir/usr/share/doc/quiet-md/"
+mkdir -p "$appdir/usr/share/X11"
+cp -a /usr/share/X11/locale "$appdir/usr/share/X11/"
+# License notices for bundled shared libraries and their Compose data.
+for package in libxkbcommon0 libxkbcommon-x11-0 libxau6 libxdmcp6 libxcb-xkb1 libbsd0 libmd0 libx11-data; do
+  install -Dm644 "/usr/share/doc/$package/copyright" "$appdir/usr/share/doc/$package/copyright"
+done
 convert assets/branding/app-icon.png -resize 512x512 "$stage/com.s1dashu.quietmd.png"
 export APPIMAGE_EXTRACT_AND_RUN=1
 export OUTPUT="$out/quiet-md-$version-x86_64.AppImage"
 export VERSION="$version"
 "$tool" --appdir "$appdir" --executable "${CARGO_TARGET_DIR:-target}/release/quiet_md" \
   --desktop-file packaging/linux/com.s1dashu.quietmd.desktop \
-  --icon-file "$stage/com.s1dashu.quietmd.png" --output appimage
+  --icon-file "$stage/com.s1dashu.quietmd.png" --custom-apprun packaging/linux/AppRun --output appimage
 chmod +x "$OUTPUT"
 # Inspect the packaged payload, not only the original executable.
 (cd "$stage" && "$OUTPUT" --appimage-extract >/dev/null)

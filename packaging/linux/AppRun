@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+appdir=$(dirname "$(readlink -f "$0")")
+# Use Compose data matching the bundled xkbcommon, not newer host keysyms.
+export XLOCALEDIR="$appdir/usr/share/X11/locale"
+exec "$appdir/usr/bin/quiet_md" "$@"
