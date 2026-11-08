@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Demo library for the promo video: a handful of everyday team documents
-plus a 1,000,000-character knowledge-base compilation for the scrolling shot.
+"""Sample library for the performance test (docs/PERFORMANCE.md): a handful
+of everyday team documents plus a 1,000,000-character knowledge-base
+compilation that the benchmark opens, types into and scrolls.
 
-    python3 tools/promo/gen_library.py /tmp/fdl-promo/lib
+    python3 tools/perf/gen_library.py /tmp/quiet-perf/library
 
 All content is synthetic. Deterministic (fixed seed)."""
 import json, os, random, sys, time

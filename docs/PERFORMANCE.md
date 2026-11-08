@@ -10,7 +10,7 @@ README 里的数字来自这里的测试流程。任何人都可以用同一套�
 | 源码 | `0e92b51`，`cargo build --release --locked` |
 | 机器 | Apple M5 Pro / 48 GiB，macOS 26.5 |
 | 窗口 | 1280 × 800 pt，2× 缩放，Craft 主题 |
-| 文档 | [样例生成器](../tools/promo/gen_library.py) 生成的 1,001,307 字符、549 章，含段落、列表、表格和代码 |
+| 文档 | [样例生成器](../tools/perf/gen_library.py) 生成的 1,001,307 字符、549 章，含段落、列表、表格和代码 |
 
 ## 方法
 
@@ -40,7 +40,7 @@ bench "wheel 900 500 40" x100: step [p50 0.01 p95 0.02 max 0.02] frame [p50 2.08
 
 ```sh
 cargo build --release --locked --features devtools
-python3 tools/promo/gen_library.py /tmp/quiet-perf/library
+python3 tools/perf/gen_library.py /tmp/quiet-perf/library
 printf '{"english":true,"theme":"craft"}\n' > /tmp/quiet-perf/library/preferences.json
 python3 tools/harness/run.py tools/harness/examples/readme-performance.txt /tmp/quiet-perf/library /tmp/quiet-perf/run
 grep -a bench /tmp/quiet-perf/run/log
