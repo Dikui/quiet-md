@@ -658,7 +658,7 @@ mod tests {
     #[test]
     fn markdown_files_round_trip() {
         let src = "---\ntitle: x\n---\n\n# Heading\n\nSome **bold**, *italic*, `code` and [a link](https://x.y).\n\n- one\n    - nested\n- two\n\n1. first\n2. second\n\n- [ ] todo\n- [x] done\n\n> quoted\n\n```rust\nfn main() {}\n```\n\n![alt](img/a%20b.png)\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n---\n";
-        let base = Path::new("/notes");
+        let base = Path::new(if cfg!(windows) { "C:/notes" } else { "/notes" });
         let doc = parse_file(src, "page", Some(base));
         assert_eq!(doc.title.text, "page");
         assert!(doc.blocks.iter().any(|b| matches!(&b.kind, BlockKind::Image { src, .. } if Path::new(src) == base.join("img").join("a b.png"))));
@@ -668,7 +668,7 @@ mod tests {
     }
 
     fn preserved(original: &str, edit: impl FnOnce(&mut Document)) -> String {
-        let base = Path::new("/notes");
+        let base = Path::new(if cfg!(windows) { "C:/notes" } else { "/notes" });
         let mut doc = parse_file(original, "t", Some(base));
         edit(&mut doc);
         let out = write_file_with(&doc, front_matter(original).0, &Options { base: Some(base), original: Some(original), ..Default::default() }).text;
