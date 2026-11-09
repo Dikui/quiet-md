@@ -15,6 +15,11 @@ const RADIUS: f32 = 12.;
 /// Each version's notes: (version, [(中文, English)]). Only the running
 /// version's are shown; a version without notes shows nothing.
 const NOTES: &[(&str, &[(&str, &str)])] = &[
+    ("0.1.9", &[
+        ("macOS：修复 ⌘Q 无法退出的问题，保留退出前的保存检查", "macOS: fix Cmd+Q not quitting, while keeping save checks before exit"),
+        ("Windows：修复关闭、最大化和最小化按钮无响应的问题", "Windows: fix unresponsive close, maximize, and minimize buttons"),
+        ("修复带背景色的文字选中后看不到选区的问题", "Keep text selection visible over highlight colors"),
+    ]),
     ("0.1.8", &[
         ("直接打开并编辑本机 Markdown 文件，导入时保留 .md 格式，支持导入文件夹和拖入文件", "Edit local Markdown files in place, keep imported files as .md, and import folders or drag files in"),
         ("首次启动按系统语言选择中文或英文，保留手动选择的语言", "Choose a supported system language on first launch and keep your manual language choice"),
