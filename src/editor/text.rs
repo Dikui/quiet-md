@@ -976,6 +976,13 @@ impl Element for RichTextElement {
                 }
             }
         }
+        // Text backgrounds sit below selection; glyphs are painted above both.
+        let dx = if self.text.is_empty() { px(self.placeholder_dx) } else { px(0.) };
+        let o = point(bounds.left() + dx, bounds.top());
+        for (hi, (_, line)) in layout.lines.iter().enumerate() {
+            let tops: Vec<Pixels> = layout.rows.iter().filter(|r| r.hard == hi).map(|r| r.y + r.base_dy).collect();
+            let _ = line.paint_background_rows(o, lh, &tops, gpui_align, Some(bounds), window, cx);
+        }
         if let Some(sel) = &self.selection {
             let rects = if self.text.is_empty() {
                 vec![Bounds::new(bounds.origin, size(px(5.), lh))]
@@ -1022,11 +1029,8 @@ impl Element for RichTextElement {
                 window.paint_quad(fill(eq.view, bg).corner_radii(px(4.)));
             }
         }
-        let dx = if self.text.is_empty() { px(self.placeholder_dx) } else { px(0.) };
         for (hi, (_, line)) in layout.lines.iter().enumerate() {
             let tops: Vec<Pixels> = layout.rows.iter().filter(|r| r.hard == hi).map(|r| r.y + r.base_dy).collect();
-            let o = point(bounds.left() + dx, bounds.top());
-            let _ = line.paint_background_rows(o, lh, &tops, gpui_align, Some(bounds), window, cx);
             let _ = line.paint_rows(o, lh, &tops, gpui_align, Some(bounds), window, cx);
         }
         for eq in prepaint.iter() {
