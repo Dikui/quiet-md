@@ -415,9 +415,11 @@ pub(crate) fn header_right_inset() -> f32 {
 
 pub(crate) fn window_controls(window: &Window) -> Option<Div> {
     if !cfg!(any(target_os = "windows", target_os = "linux")) { return None; }
+    // Windows must receive mouse-down to arm its native caption buttons.
     let button = |id: &'static str, area: WindowControlArea, label: &'static str| {
         div().id(id).size(px(crate::app::HEADER_ACTIONS_H)).mx(px(7.)).rounded(px(8.)).flex_none().flex().items_center().justify_center().cursor_pointer()
-            .occlude().no_drag()
+            .occlude()
+            .when(cfg!(target_os = "linux"), |d| d.no_drag())
             .when(cfg!(target_os = "windows"), |d| d.window_control_area(area))
             .when(cfg!(target_os = "linux"), |d| d.on_click(move |_, window, cx| match area {
                 WindowControlArea::Min => window.minimize_window(),

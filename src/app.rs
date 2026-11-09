@@ -134,7 +134,7 @@ pub fn bind_keys(cx: &mut App) {
             });
         }
     });
-    cx.on_action(|_: &Quit, cx| quit(cx));
+    cx.on_action(|_: &Quit, cx| cx.defer(quit));
     crate::modes::bind_keys(cx);
 }
 
