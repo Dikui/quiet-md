@@ -68,7 +68,7 @@ const CARD: f32 = 5.;
 const ROW: f32 = 4.;
 
 /// Folders and documents share the @ panel and the reference list; a folder
-/// gets the outline folder glyph on a blue tile, matching the blue page glyph.
+/// gets the outline folder glyph on a blue tile, drawn in the page glyph's line color.
 fn folder_avatar(size: f32) -> Div {
     div()
         .flex_none()
@@ -78,7 +78,7 @@ fn folder_avatar(size: f32) -> Div {
         .flex()
         .items_center()
         .justify_center()
-        .child(crate::ui::icon("folder", size * 0.625, gpui::white()))
+        .child(crate::ui::icon("folder", size * 0.625, Theme::bg_body()))
 }
 
 impl Links {
