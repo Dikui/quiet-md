@@ -555,7 +555,7 @@ impl Workspace {
     }
 
     /// Direct creation actions inside a folder.
-    fn add_button(&self, e: &Entry, key: &str, folder: bool, cx: &mut Context<Self>) -> impl IntoElement {
+    fn add_button(&self, e: &Entry, key: &str, folder: bool, cx: &mut Context<Self>) -> Stateful<Div> {
         let id = e.id.clone();
         div()
             .id(SharedString::from(format!("add-{key}-{folder}-{}", e.id)))
@@ -684,8 +684,10 @@ impl Workspace {
                 })
             })
             .child(title)
-            .when(!renaming && folder && batch.is_none() && key == "doc", |d| d.child(self.add_button(e, key, true, cx)).child(self.add_button(e, key, false, cx)))
-            .when(!renaming && batch.is_none(), |d| d.child(self.more_button(e, key, cx).when(key == "doc", |d| d.ml(px(2.)))))
+            // A folder's "…", "new folder" and "+" sit in the same columns as the header's
+            // 批量操作, 新建文件夹 and 新建文档.
+            .when(!renaming && folder && batch.is_none() && key == "doc", |d| d.child(self.more_button(e, key, cx).mr(px(0.))).child(self.add_button(e, key, true, cx).ml(px(2.))).child(self.add_button(e, key, false, cx).ml(px(2.)).mr(px(4.))))
+            .when(!renaming && !(folder && key == "doc") && batch.is_none(), |d| d.child(self.more_button(e, key, cx).when(key == "doc", |d| d.ml(px(2.)))))
     }
 
     pub(crate) fn render_row_menu(&self, window: &Window, cx: &mut Context<Self>) -> Vec<AnyElement> {
