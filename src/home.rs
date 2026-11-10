@@ -56,8 +56,16 @@ const STARRED_COLS: [Col; 4] = [Col::Modified, Col::Created, Col::Visited, Col::
 
 /// Bounded document trees retain formatting without retaining a whole long document.
 type EquationNumbers = HashMap<crate::model::BlockId, u32>;
-struct ThumbContent { blocks: Vec<crate::model::Block>, eqnos: EquationNumbers, cover: Option<crate::model::Cover> }
+struct ThumbContent { blocks: Vec<crate::model::Block>, eqnos: EquationNumbers, cover: Option<crate::model::Cover>, has_subpages: bool }
 type Thumb = Rc<ThumbContent>;
+
+fn has_subpage_list(blocks: &[crate::model::Block]) -> bool {
+    blocks.iter().any(|b| match &b.kind {
+        BlockKind::SubPageList => true,
+        BlockKind::Table(t) => t.rows.iter().any(|row| row.iter().any(|cell| has_subpage_list(&cell.blocks))),
+        _ => has_subpage_list(&b.children),
+    })
+}
 
 fn thumb_blocks(blocks: &[crate::model::Block], budget: &mut usize, depth: usize, numbers: &EquationNumbers, eqnos: &mut EquationNumbers) -> Vec<crate::model::Block> {
     if depth > 8 { return vec![]; }
@@ -465,17 +473,25 @@ impl Workspace {
 
     fn thumb(&self, e: &Entry) -> Thumb {
         use std::hash::{Hash, Hasher};
+        let mut stamp = rustc_hash::FxHasher::default();
+        e.meta.modified.hash(&mut stamp);
+        crate::settings::feishu().hash(&mut stamp);
+        let base_stamp = stamp.finish();
+        // If the preview contains no sibling subpages, modified + settings uniquely
+        // identifies it without rebuilding the whole tree on every frame.
+        if let Some((m, t, used)) = self.home.thumbs.borrow_mut().get_mut(&e.id)
+            && !t.has_subpages && *m == base_stamp { *used = std::time::Instant::now(); return t.clone(); }
         // A child-page list shows the other pages in the document's folder, as in
         // the open document (`sync_sub_pages`).
         let tree = crate::tree::Tree::new(&self.entries);
         let children: Vec<&Entry> = tree.children(e.meta.parent.as_deref()).iter().copied().filter(|p| p.id != e.id).collect();
-        let mut stamp = rustc_hash::FxHasher::default();
-        e.meta.modified.hash(&mut stamp);
-        crate::settings::feishu().hash(&mut stamp);
-        for child in &children { (&child.id, &child.title, &child.icon).hash(&mut stamp); }
-        let stamp = stamp.finish();
+        let mut full_stamp = rustc_hash::FxHasher::default();
+        e.meta.modified.hash(&mut full_stamp);
+        crate::settings::feishu().hash(&mut full_stamp);
+        for child in &children { (&child.id, &child.title, &child.icon).hash(&mut full_stamp); }
+        let full_stamp = full_stamp.finish();
         if let Some((m, t, used)) = self.home.thumbs.borrow_mut().get_mut(&e.id)
-            && *m == stamp { *used = std::time::Instant::now(); return t.clone(); }
+            && *m == full_stamp { *used = std::time::Instant::now(); return t.clone(); }
         // The derived rows exist only in this preview tree and never enter the editor/store.
         fn subpages(blocks: &mut [crate::model::Block], entries: &[&Entry], budget: &mut usize) {
             for b in blocks {
@@ -488,7 +504,7 @@ impl Workspace {
                 }
             }
         }
-        let mut budget = 64;
+        let mut budget = 32;
         let mut eqnos = HashMap::new();
         let mut cover = None;
         let mut blocks = self.store.load(&e.id).map(|doc| {
@@ -496,8 +512,10 @@ impl Workspace {
             let numbers = crate::editor::equation_numbers(&doc);
             thumb_blocks(&doc.blocks, &mut budget, 0, &numbers, &mut eqnos)
         }).unwrap_or_default();
-        subpages(&mut blocks, &children, &mut budget);
-        let t: Thumb = Rc::new(ThumbContent { blocks, eqnos, cover });
+        let has_subpages = has_subpage_list(&blocks);
+        if has_subpages { subpages(&mut blocks, &children, &mut budget); }
+        let stamp = if has_subpages { full_stamp } else { base_stamp };
+        let t: Thumb = Rc::new(ThumbContent { blocks, eqnos, cover, has_subpages });
         let mut thumbs = self.home.thumbs.borrow_mut();
         // Keep recent previews warm without retaining every document ever visited.
         if thumbs.len() >= 128 && !thumbs.contains_key(&e.id) {
@@ -853,6 +871,10 @@ impl Workspace {
     /// in a folder that show one (`home_folder.rs`). `pad`: its margin.
     pub(crate) fn thumb_page(&self, e: &Entry, pad: f32) -> Div {
         let thumb = self.thumb(e);
+        self.thumb_page_with(e, &thumb, pad)
+    }
+
+    fn thumb_page_with(&self, e: &Entry, thumb: &Thumb, pad: f32) -> Div {
         if thumb.blocks.is_empty() && e.title.trim().is_empty() {
                 div()
                     .size_full()
@@ -880,7 +902,7 @@ impl Workspace {
             let id = e.id.clone();
             let id2 = e.id.clone();
             let thumb = self.thumb(e);
-            let page = self.thumb_page(e, 18.);
+            let page = self.thumb_page_with(e, &thumb, 18.);
             let cover = thumb.cover.as_ref().and_then(|c| crate::store::image_path(&c.src));
             let frame = 4.;
             let menu_on = self.row_menu.as_ref().is_some_and(|m| m.id == e.id);
