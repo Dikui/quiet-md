@@ -1177,7 +1177,14 @@ impl Editor {
     }
 
     pub fn align(&mut self, a: Align, window: &mut Window, cx: &mut Context<Self>) {
-        if self.markdown { return; }
+        // A Markdown file keeps alignment only as a table column's.
+        if self.markdown {
+            if self.core.cell_sel.is_some() || self.core.cell_of(self.core.sel.head.block).is_some() {
+                self.core.table_align_columns(a);
+                self.changed(window, cx);
+            }
+            return;
+        }
         let ids = self.core.selected_blocks();
         self.core.set_align(&ids, a);
         self.changed(window, cx);
