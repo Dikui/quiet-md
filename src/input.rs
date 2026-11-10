@@ -7,6 +7,7 @@ use crate::theme::Theme;
 use gpui::*;
 use std::ops::Range;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::{cell::Cell, rc::Rc};
 use unicode_segmentation::UnicodeSegmentation;
 
 actions!(
@@ -97,6 +98,8 @@ pub struct TextField {
     selecting: bool,
     /// Typing hides the mouse pointer until it moves (see the editor's).
     pointer_hidden: bool,
+    /// Horizontal scroll of a single-line field, shared with its text element.
+    scroll: Rc<Cell<Pixels>>,
 }
 
 impl EventEmitter<TextFieldEvent> for TextField {}
@@ -133,6 +136,7 @@ impl TextField {
             hide_caret: false,
             selecting: false,
             pointer_hidden: false,
+            scroll: Rc::new(Cell::new(px(0.))),
         }
     }
 
@@ -514,6 +518,7 @@ impl Render for TextField {
             found: vec![],
             eq_counter: 0,
             button_edit: None,
+            scroll: Some(self.scroll.clone()),
         };
         let entity = cx.entity();
         let focus = self.focus.clone();
