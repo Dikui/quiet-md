@@ -116,7 +116,7 @@ fn step(c: &mut Core, rng: &mut Rng) -> String {
     }
     let us = c.units();
     let any = |rng: &mut Rng| rng.pick(&us).id;
-    match rng.below(23) {
+    match rng.below(24) {
         0..=2 => {
             let s = *rng.pick(TEXTS);
             c.insert_text(s);
@@ -211,6 +211,13 @@ fn step(c: &mut Core, rng: &mut Rng) -> String {
         }
         20 => table_step(c, rng),
         21 => object_step(c, rng),
+        22 => {
+            if c.sel.head.block != TITLE && !c.is_code(c.sel.head.block) {
+                let images = parse("<title></title><img src=\"screenshot.png\"/><p></p>").unwrap();
+                c.paste_blocks(images.blocks);
+            }
+            "paste_image".into()
+        }
         _ => {
             c.trailing_line();
             "trailing_line".into()
