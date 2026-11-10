@@ -345,12 +345,12 @@ impl Default for Home {
 }
 
 impl Home {
-    fn anchor(&self, key: &str) -> Option<Bounds<Pixels>> {
+    pub(crate) fn anchor(&self, key: &str) -> Option<Bounds<Pixels>> {
         self.anchors.borrow().get(key).copied()
     }
 
     /// Records the element's bounds under `key` each frame.
-    fn track(&self, key: &'static str) -> impl IntoElement {
+    pub(crate) fn track(&self, key: &'static str) -> impl IntoElement {
         let rec = self.anchors.clone();
         canvas(move |b, _, _| {
             rec.borrow_mut().insert(key, b);
@@ -606,10 +606,11 @@ impl Workspace {
             .child(self.import_button("home-import", None, cx))
             .child(
             crate::ui::header_icon("home-new", "plus")
+                .child(self.home.track("create-home"))
                 .when(self.create_menu.is_some(), |d| d.bg(Theme::fill_hover()))
                 .tip(crate::settings::tr("新建", "New"), Some(crate::shortcuts::hint("workspace::NewDoc", "⌘ + N")))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .on_click(cx.listener(|w, ev: &ClickEvent, _, cx| { w.create_menu = if w.create_menu.is_some() { None } else { Some((None, ev.position() + point(px(18.), px(20.)))) }; cx.notify(); })).into_any_element()
+                .on_click(cx.listener(|w, ev: &ClickEvent, _, cx| { let pos = w.home.anchor("create-home").map_or(ev.position(), |b| point(b.left(), b.bottom() + px(4.))); w.create_menu = if w.create_menu.is_some() { None } else { Some((None, pos)) }; cx.notify(); })).into_any_element()
         );
         // Tabs as segmented items: the current one on a quiet fill, no accent.
         let tab = |id: &'static str, label: &'static str, t: HomeTab| {

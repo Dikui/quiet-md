@@ -117,7 +117,7 @@ impl Workspace {
         let folder_parent = parent.clone();
         let row = |id: &'static str, glyph: &'static str, label: &'static str| crate::ui::menu_row(id, SharedString::from(id)).child(icon(glyph, 16., Theme::icon())).child(label);
         let (doc_parent, md_parent) = (parent.clone(), parent.clone());
-        Some(deferred(anchored().anchor(Corner::TopRight).position(pos).snap_to_window_with_margin(px(8.)).child(
+        Some(deferred(anchored().anchor(Corner::TopLeft).position(pos).snap_to_window_with_margin(px(8.)).child(
             popover().id("create-items").occlude().w(px(180.)).py(px(crate::ui::MENU_PAD_Y))
                 .on_mouse_down_out(cx.listener(|w, _, _, cx| { w.create_menu = None; cx.notify(); }))
                 .child(row("create-document", "doc", tr("文档", "Document")).on_click(cx.listener(move |w, _, window, cx| w.create_doc(false, doc_parent.clone(), window, cx))))
@@ -159,10 +159,11 @@ impl Workspace {
         let header = crate::trash::page_header_with(self, crumbs, 26., cx)
             .child(self.import_button("folder-import", Some(id.clone()), cx))
             .child(crate::ui::header_icon("folder-new", "plus")
+                .child(self.home.track("create-folder"))
                 .when(self.create_menu.is_some(), |d| d.bg(Theme::fill_hover()))
                 .tip(tr("新建", "New"), Some(crate::shortcuts::hint("workspace::NewDoc", "⌘ + N")))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .on_click(cx.listener(move |w, ev: &ClickEvent, _, cx| { let p = Some(doc.clone()); w.create_menu = if w.create_menu.is_some() { None } else { Some((p, ev.position() + point(px(18.), px(20.)))) }; cx.notify(); })))
+                .on_click(cx.listener(move |w, ev: &ClickEvent, _, cx| { let pos = w.home.anchor("create-folder").map_or(ev.position(), |b| point(b.left(), b.bottom() + px(4.))); let p = Some(doc.clone()); w.create_menu = if w.create_menu.is_some() { None } else { Some((p, pos)) }; cx.notify(); })))
             .child(self.view_switch(cx).no_drag().ml(px(12.)));
         let children = self.level_entries(Some(&id));
         let body = if children.is_empty() {

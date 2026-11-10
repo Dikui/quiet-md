@@ -379,9 +379,9 @@ impl Workspace {
                             cx.notify();
                         })),
                 )
-                .child(trigger("section-add", "plus").ml(px(2.)).mr(px(4.)).when(create_open, |d| d.bg(Theme::sidebar_selected())).tip(crate::settings::tr("新建", "New"), None)
+                .child(trigger("section-add", "plus").ml(px(2.)).mr(px(4.)).child(self.home.track("create-sidebar")).when(create_open, |d| d.bg(Theme::sidebar_selected())).tip(crate::settings::tr("新建", "New"), None)
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .on_click(cx.listener(|w, ev: &ClickEvent, _, cx| { w.create_menu = if w.create_menu.is_some() { None } else { Some((None, ev.position() + point(px(18.), px(20.)))) }; cx.notify(); })));
+                    .on_click(cx.listener(|w, ev: &ClickEvent, _, cx| { let pos = w.home.anchor("create-sidebar").map_or(ev.position(), |b| point(b.left(), b.bottom() + px(4.))); w.create_menu = if w.create_menu.is_some() { None } else { Some((None, pos)) }; cx.notify(); })));
         }
         row.child(
             div()
@@ -416,9 +416,9 @@ impl Workspace {
                 w.row_menu = None;
                 cx.notify();
             })))
-            .child(trigger("section-add", "plus").ml(px(2.)).mr(px(4.)).when(create_open, |d| d.bg(Theme::sidebar_selected())).tip(crate::settings::tr("新建", "New"), None)
+            .child(trigger("section-add", "plus").ml(px(2.)).mr(px(4.)).child(self.home.track("create-sidebar")).when(create_open, |d| d.bg(Theme::sidebar_selected())).tip(crate::settings::tr("新建", "New"), None)
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .on_click(cx.listener(|w, ev: &ClickEvent, _, cx| { w.create_menu = if w.create_menu.is_some() { None } else { Some((None, ev.position() + point(px(18.), px(20.)))) }; cx.notify(); })))
+                .on_click(cx.listener(|w, ev: &ClickEvent, _, cx| { let pos = w.home.anchor("create-sidebar").map_or(ev.position(), |b| point(b.left(), b.bottom() + px(4.))); w.create_menu = if w.create_menu.is_some() { None } else { Some((None, pos)) }; cx.notify(); })))
         })
     }
 
