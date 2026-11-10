@@ -505,7 +505,8 @@ FuE4L1zQnqL1nA/5xffpEtZyK2ca882Q1joA5X11poZ1xezdAlEMfn/36MJc5C60clQFec4vQf66MoxP
 
 #[cfg(all(test, target_os = "linux"))]
 mod linux_tests {
-    use super::*;
+    use super::SWAP_APPIMAGE;
+    use std::{path::Path, process::{Command, Stdio}, time::Duration};
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
     #[test]
