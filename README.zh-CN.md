@@ -68,7 +68,7 @@
 
 - **macOS**：解压后把 `quiet.md.app` 拖进「应用程序」。安装包已签名并通过 Apple 公证。
 - **Windows**：运行安装程序，默认只装到当前用户目录，卸载不会删除笔记。如果首次运行出现 SmartScreen 提示，点「更多信息 → 仍要运行」即可。
-- **Linux**（实验性）：`chmod +x quiet-md-*.AppImage` 后直接运行；没有 FUSE 时加 `--appimage-extract-and-run`。需要手动更新。目前只在 Omarchy（Wayland）上做过交互测试，详见 [Linux 说明](CONTRIBUTING.md#linux-experimental)。
+- **Linux**（实验性）：`chmod +x quiet-md-*.AppImage` 后直接运行；没有 FUSE 时加 `--appimage-extract-and-run`。AppImage 从 0.1.10 起支持应用内更新；更早的 Linux 版本需先手动安装本版。目前只在 Omarchy（Wayland）上做过交互测试，详见 [Linux 说明](CONTRIBUTING.md#linux-experimental)。
 
 也可以在官网 [Quiet.md](https://quiet.md) 下载。所有版本和 SHA-256 校验值见 [GitHub Releases](https://github.com/s1dashu/quiet-md/releases)。
 
@@ -110,6 +110,7 @@
 
 ## 近期更新
 
+- **0.1.10**（11 月 10 日）：新建菜单可选择文档类型，宽表格支持横向滚动，Markdown 表格保存列对齐，长输入框跟随光标滚动。
 - **0.1.9**（11 月 8 日）：修复 macOS ⌘Q 无法退出、Windows 窗口按钮无响应，以及文字背景色遮挡选区的问题。
 - **0.1.8**（11 月 9 日）：支持本机 Markdown 原地编辑、保留 `.md` 的文件夹导入、多级文件夹与拖动/撤销；优化图片和预览内存占用，修复表格调宽跳页，统一菜单样式；首次启动选择系统支持的语言，新增实验性 Linux AppImage 打包。
 - **0.1.7**（11 月 6 日）：加固多窗口保存、冲突恢复和写盘；限制导出读取文件的范围；Markdown 导出保留行内附件；修复 Windows 小狼毫输入法误删文字。

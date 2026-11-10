@@ -1,6 +1,6 @@
 [package]
 name = "quiet_md"
-version = "0.1.9"
+version = "0.1.10"
 edition = "2024"
 description = "A fast, local-first rich text notes app for macOS and Windows, drawn with GPUI and compatible with Feishu DocxXML"
 license = "MIT"
