@@ -112,6 +112,7 @@ Thanks to everyone who has helped build Quiet.md. Issues and pull requests are w
 
 ## Recent updates
 
+- **0.1.10** (Nov 10): choose a document type from the New menu, scroll wide tables horizontally, preserve Markdown column alignment, and keep the caret visible in long fields.
 - **0.1.9** (Nov 8): fix Cmd+Q on macOS, unresponsive window controls on Windows, and text selection hidden by highlight colors.
 - **0.1.8** (Nov 9): edit local Markdown files in place, import folders while keeping `.md`, and organize notes in nested folders with drag and undo. Lower image and preview memory use; steadier table resizing and refined menus. First launch chooses a supported system language. Experimental Linux AppImage packaging.
 - **0.1.7** (Nov 6): safer multi-window saving, conflict recovery and disk writes; restricted export file access; Markdown exports keep inline attachments. Fixed Chinese input deletion with Weasel on Windows.
